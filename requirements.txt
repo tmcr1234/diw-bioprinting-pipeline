@@ -1,0 +1,14 @@
+# Python dependencies for the rheology + printability analysis layer.
+# Pinned to versions known to work with the legacy .xls workbook format
+# the scripts expect. If you upgrade pandas past 2.x, double-check that
+# xlrd is still acceptable as an engine (pandas dropped .xls support
+# internally in 2.0 but still accepts it via engine="xlrd").
+
+numpy>=1.23
+pandas>=1.5,<3.0
+scipy>=1.10
+matplotlib>=3.6
+xlrd>=2.0.1            # MANDATORY for .xls — do not substitute openpyxl
+
+# Optional — only needed if you switch to .xlsx exports from a new rheometer
+# openpyxl>=3.1

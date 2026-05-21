@@ -1,0 +1,698 @@
+\documentclass[11pt,a4paper]{article}
+
+% ----- Packages -----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{lastpage}
+
+% ----- Hyperref -----
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!60!black,
+  citecolor=teal!50!black
+}
+
+% ----- Colored boxes -----
+\tcbuselibrary{skins,breakable}
+
+\newtcolorbox{stepbox}[2][]{
+  colback=blue!4!white, colframe=blue!55!black,
+  fonttitle=\bfseries, coltitle=white, colbacktitle=blue!55!black,
+  title={#2}, arc=2mm, boxrule=0.5pt,
+  left=8pt, right=8pt, top=4pt, bottom=4pt, breakable, #1
+}
+
+\newtcolorbox{stopcheck}[1][]{
+  colback=orange!8!white, colframe=orange!75!black,
+  fonttitle=\bfseries, coltitle=white, colbacktitle=orange!75!black,
+  title={STOP \& CHECK}, arc=2mm, boxrule=0.5pt,
+  left=8pt, right=8pt, top=4pt, bottom=4pt, breakable, #1
+}
+
+\newtcolorbox{warningbox}[1][]{
+  colback=red!6!white, colframe=red!70!black,
+  fonttitle=\bfseries, coltitle=white, colbacktitle=red!70!black,
+  title={SAFETY / DATA INTEGRITY}, arc=2mm, boxrule=0.5pt,
+  left=8pt, right=8pt, top=4pt, bottom=4pt, breakable, #1
+}
+
+\newtcolorbox{tipbox}[1][]{
+  colback=green!5!white, colframe=green!50!black,
+  fonttitle=\bfseries, coltitle=white, colbacktitle=green!50!black,
+  title={TIP}, arc=2mm, boxrule=0.5pt,
+  left=8pt, right=8pt, top=4pt, bottom=4pt, breakable, #1
+}
+
+\newtcolorbox{keybox}[1][]{
+  colback=purple!4!white, colframe=purple!55!black,
+  fonttitle=\bfseries, coltitle=white, colbacktitle=purple!55!black,
+  title={KEY IDEA}, arc=2mm, boxrule=0.5pt,
+  left=8pt, right=8pt, top=4pt, bottom=4pt, breakable, #1
+}
+
+% ----- Headers -----
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small SOP v4.0 -- DIW Printing Parameters (per-shape suite)}
+\lhead{\small BioPoli - PEMM/COPPE/UFRJ}
+\rfoot{\small \thepage\ / \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ----- Code style -----
+\lstdefinestyle{shell}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{gray!8},
+  frame=single, rulecolor=\color{gray!40},
+  columns=fullflexible, breaklines=true,
+  showstringspaces=false, tabsize=2
+}
+
+% ----- Title spacing -----
+\titlespacing*{\section}{0pt}{12pt}{6pt}
+\titlespacing*{\subsection}{0pt}{8pt}{4pt}
+
+\title{\textbf{Standard Operating Procedure (SOP) v4.0:\\
+DIW 3D Printing Calibration via a Per-Shape Test Suite}\\[4pt]
+\large \textsl{One STL per benchmark geometry, swept over
+$(v_\mathrm{print}, \mathrm{EM})$ at fixed slicer settings, paired
+with a flash$+$no-flash iPhone photograph for downstream
+image-based scoring.}}
+\author{BioPoli - PEMM/COPPE/UFRJ \\[2pt]
+\small Document owner: Thiago~M.~C.~Rodrigues \quad
+Version: 4.0 \quad Date: \today}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{tcolorbox}[colback=blue!3!white,colframe=blue!50!black,
+                  arc=2mm,boxrule=0.4pt,left=8pt,right=8pt]
+\textbf{What changed from v3.0.}\\
+v3.0 collapsed the C1--C4 calibration battery into a single
+\textbf{Consolidated Calibration Coupon (CCC\_v1)}. v4.0 returns to
+a \emph{per-shape benchmark suite}: each printability quantity is
+measured on its own purpose-built specimen, swept over a
+$(v_\mathrm{print}, \mathrm{EM})$ grid. The shift is motivated by:
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt]
+\item \textbf{Reviewer-familiar geometries.} Hollow cubes, towers,
+0/90 scaffolds, raster (S-test) and bridges are the standard
+benchmarks in the DIW literature. Reporting on these directly is
+defensible without explaining a one-off coupon design.
+\item \textbf{Quantitative image analysis at the shape scale.}
+Each shape isolates one failure mode, which simplifies the
+image-processing pipeline (Section~\ref{sec:imaging}) and gives a
+single \emph{printability value} per shape per operating point.
+\item \textbf{Direct slicer authoring.} G-codes are sliced
+once per shape in PrusaSlicer and reused across inks. EM and
+$v_\mathrm{print}$ are swept by re-slicing, not by hand-baking $E$
+values.
+\end{itemize}
+
+\textbf{Photography protocol (new in v4).} Two iPhone photographs
+per G-code, taken from the same mounted position --- one with the
+built-in flash, one without. Substrate background is either
+\textbf{black} or \textbf{blue} matte material (subfoldered).
+\end{tcolorbox}
+
+\tableofcontents
+\bigskip
+
+% =======================================================
+\section{Why a per-shape suite}
+
+\begin{keybox}
+A single geometry cannot simultaneously isolate line width,
+infill quality, layer-on-layer stacking, vertical stability,
+overhang behaviour, and pore fidelity. Each of these failure
+modes \emph{is} a shape. The community-standard benchmark
+geometries (hollow cube, raster/S, scaffold 0/90, tower, bridge)
+were designed to do exactly that.
+\end{keybox}
+
+CCC\_v1 (v3.0) prioritised throughput --- one specimen per
+operating point --- at the cost of measuring four heterogeneous
+quantities on the same print. v4.0 reverses that trade. Each
+benchmark is sliced once, swept over $(v_\mathrm{print},
+\mathrm{EM})$, photographed under controlled lighting, and scored
+by a per-shape metric. The cost is roughly $5\times$ the number of
+prints, offset by:
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+\item Direct comparison against published bioprinting benchmarks.
+\item One photograph $\to$ one quantitative score per shape,
+through the imaging pipeline of Section~\ref{sec:imaging}.
+\item No bespoke CAD --- all geometries are public-domain
+benchmarks already used in the field.
+\end{itemize}
+
+% =======================================================
+\section{Shape inventory}
+\label{sec:shapes}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{2.6cm} p{4.4cm} p{4.6cm} p{3.4cm}}
+\toprule
+Shape & STL location & Quantifies & Failure modes \\
+\midrule
+Hollow cube & \texttt{Cubes/cubes.stl} &
+  Wall fidelity, corner sharpness, perimeter continuity &
+  Wall collapse, corner rounding \\
+Raster / S-test & \texttt{S-Test/Teste de Printabilidade Raster.stl} &
+  Printability index (line straightness and uniformity in a raster
+  pattern) &
+  Under/over-extrusion, stringing \\
+Area cubes (full-fill, varying height) &
+  \texttt{Area-Cube/Modelo Area Cubos.stl} &
+  Infill density, layer adhesion, top-surface flatness &
+  Inter-line gaps, top-surface roughness \\
+Tower 20\,mm & \texttt{Tower-20mm/} &
+  Short-tower stability, base bulge &
+  Buckling onset, base spreading \\
+Tower 40\,mm & \texttt{Tower-40mm/} &
+  Tall-tower buckling limit &
+  Lateral collapse, base creep \\
+Scaffold 0/90 & \texttt{Scaffold 0-90/} &
+  Pore fidelity, layer-on-layer registration &
+  Pore closure, strand sag into pore \\
+Bridge / suporte & \texttt{Bridge/Modelo Suporte.stl} &
+  Bridging / overhang &
+  Mid-span sag, dropout \\
+Misc (Pot, Star, Pyramid, Maze) & \texttt{Misc/} &
+  Complex-geometry validation &
+  Geometry-specific (e.g.\ thin-feature failure) \\
+\bottomrule
+\end{tabular}
+\caption{Benchmark shape inventory. STLs sliced once in PrusaSlicer,
+swept across $(v_\mathrm{print}, \mathrm{EM})$. ``Failure modes''
+indicate the dominant artefact each shape is designed to expose.}
+\label{tab:shapes}
+\end{table}
+
+\subsection{Folder organisation under \texttt{Impressao 3D/}}
+
+\begin{lstlisting}[style=shell]
+Impressao 3D/
+  Area-Cube/      <- STL + 15 gcodes (Vp x Fr sweep)
+  Bridge/         <- STL only
+  Cubes/          <- STL only
+  Misc/Pot/       <- STL + gcodes (in progress)
+  Misc/Star/      <- STL + gcodes (in progress)
+  S-Test/         <- STL + 20 gcodes (Vp x Flow sweep)
+    SF5.5/
+      Black/      <- iPhone photos on BLACK substrate
+      Blue/       <- iPhone photos on BLUE substrate
+  Scaffold 0-90/  <- STL + gcodes (in progress)
+  Tower-20mm/     <- STL + gcodes (in progress)
+  Tower-40mm/     <- STL + gcodes (in progress)
+  OLD/            <- CCC_v1 archival (do not use)
+\end{lstlisting}
+
+The \texttt{SF5.5/} subfolder is an ink identifier (here:
+C15 + sunflower-oil nanoemulsion @ 5.5\%). \texttt{Black/} and
+\texttt{Blue/} are \emph{substrate background colours}, not ink
+colours. The same operating point is photographed against both
+backgrounds when contrast against one background is degenerate
+(e.g.\ white ink fades against a high-key flash on blue but reads
+on black). Subsequent inks introduce a sibling subfolder
+(e.g.\ \texttt{C15/}, \texttt{Bozano/}) at the same level as
+\texttt{SF5.5/}.
+
+% =======================================================
+\section{Naming convention for G-codes}
+\label{sec:naming}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{3.4cm} p{4.0cm} p{6.6cm}}
+\toprule
+Token & Meaning & Sweep values currently in folder \\
+\midrule
+\texttt{Vp$N$} &
+$v_\mathrm{print}$ (print-head speed) in mm/s.
+\textbf{Not} piston velocity. &
+$N \in \{5, 7, 10, 15, 30\}$ \\
+\texttt{Fr$X$} or \texttt{Flow$X$} &
+Extrusion Multiplier (the PrusaSlicer field). $1.0$ is
+no-correction. &
+Area-Cube: $\{1, 1.5, 2\}$; \quad
+S-Test: $\{1, 1.57, 2, 2.5\}$. The value $1.57$ matches
+the Cross-model prediction $1/k_\mathrm{flow}$ for SF5.5
+(NE-loaded CMC). \\
+\bottomrule
+\end{tabular}
+\caption{Filename tokens. Example: \texttt{Vp10-Fr1,5.gcode}
+$\Rightarrow$ $v_\mathrm{print}=10$ mm/s, $\mathrm{EM}=1.5$.}
+\label{tab:naming}
+\end{table}
+
+\begin{warningbox}
+\textbf{``Vp'' here is print-head speed, not piston velocity.}
+In the rheology / simulation pipeline (CLAUDE.md, MATLAB
+\texttt{run\_solver\_v3.m}), $V_p$ denotes \emph{piston advance
+velocity} (typically $\sim 0.01$ mm/s for DIW). The G-code
+filenames in \texttt{Impressao 3D/} use \texttt{Vp} as shorthand
+for $v_\mathrm{print}$, the slicer's perimeter speed (5--30~mm/s).
+Both quantities are physically distinct and orders of magnitude
+apart. Always read the gcode's \texttt{F$\,\langle\mathrm{value}\rangle$}
+feedrate to confirm: \texttt{F600} = 10~mm/s = \texttt{Vp10}.
+\end{warningbox}
+
+% =======================================================
+\section{PrusaSlicer configuration}
+\label{sec:slicer}
+
+The fixed-field profile from SOP v3.0 carries over unchanged
+(filament diameter 14.3~mm, retract 0, fan off, extrusion width
+0.5~mm, etc.). Only the variable fields differ between G-codes
+within a sweep.
+
+\subsection{Fixed fields (one-time printer profile)}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{5.2cm} p{3.4cm} p{6.2cm}}
+\toprule
+Slicer field & Value & Why \\
+\midrule
+Filament diameter & $\mathbf{14.3\,\mathrm{mm}}$ &
+  $= 2 R_\mathrm{syringe}$, BD 10 mL. Makes 1 mm slicer-$E$ = 1 mm
+  piston. Critical. \\
+Filament density & $1.00\,\mathrm{g/cm^3}$ & Bookkeeping. \\
+Cooling fan & OFF & DIW. \\
+Retract length & 0 mm & DIW. \\
+Retract Z-hop & 0 mm & DIW. \\
+Travel speed & 60 mm/s & Avoid head-drag through wet ink. \\
+Skirt loops & 1 & Prime line. \\
+Brim & 0 & DIW. \\
+Top/bottom solid layers & 0 (except Area-Cube top: 2) &
+  Allow top-surface flatness reading on Area-Cube only. \\
+Perimeters & 1 (Hollow Cube, Scaffold, Tower) or 2 (Bridge) &
+  Single perimeter for transparent failure-mode reading. \\
+Extrusion width & $\mathbf{0.5\,\mathrm{mm}}$ &
+  Matches 21G needle ID (0.515 mm). \\
+First-layer extrusion width & $0.5\,\mathrm{mm}$ & No squish. \\
+First-layer speed & $=$ Perimeter speed &
+  Do not let PrusaSlicer slow the first layer. \\
+\bottomrule
+\end{tabular}
+\caption{Fixed PrusaSlicer fields. Save in a printer + filament
+profile pair (e.g.\ \texttt{DIW\_BD10mL\_21G}).}
+\label{tab:slicer_fixed}
+\end{table}
+
+\subsection{Variable fields (per G-code)}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{4.2cm} p{3.8cm} p{6.4cm}}
+\toprule
+Slicer field & Set to & Source / formula \\
+\midrule
+Filament $\to$ Extrusion Multiplier &
+  $\mathrm{EM} = 1/k_\mathrm{flow,pred}$ &
+  From \texttt{slicer\_lookup\_*.csv} (output of
+  \texttt{run\_solver\_v3.m}). For SF5.5: 1.57. For an unknown ink,
+  start at 1.0 and refine. \\
+Filament $\to$ Max volumetric speed &
+  $Q_\mathrm{cap} = \pi R_\mathrm{syr}^2 V_p$ &
+  For BD 10 mL: $Q_\mathrm{cap}\,[\mathrm{mm^3/s}] = 160.6 \cdot
+  V_\mathrm{p,piston}\,[\mathrm{mm/s}]$. At $V_\mathrm{p,piston}
+  = 0.01$ mm/s, $Q_\mathrm{cap} = 1.606$ mm$^3$/s. \\
+Print $\to$ Perimeter speed (and First-layer speed) &
+  $v_\mathrm{print}$ from the test matrix &
+  Sweep values: 5, 7, 10, 15, 30 mm/s (the ``Vp'' filename token). \\
+\bottomrule
+\end{tabular}
+\caption{Per-G-code variable fields. All other parameters in
+Table~\ref{tab:slicer_fixed} remain fixed.}
+\label{tab:slicer_variable}
+\end{table}
+
+\subsection{Predicted EM (current ink panel)}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Ink & $k_\mathrm{flow,pred}$ & $\mathrm{EM} = 1/k_\mathrm{flow}$ & Notes \\
+\midrule
+C15 & 0.83 & \textbf{1.20} & Baseline CMC \\
+C15 Gira 5.5 (SF5.5) & 0.64 & \textbf{1.57} &
+  Nanoemulsion-loaded, lowest recovery \\
+Bozano & 1.06 & \textbf{0.94} & Commercial reference \\
+\bottomrule
+\end{tabular}
+\caption{Cross-model predictions, $V_\mathrm{p,piston}=0.01$ mm/s,
+21G. The 1.57 value appears in the S-Test sweep as the
+SF5.5-tuned operating point.}
+\end{table}
+
+\subsection{Start / End G-code}
+
+PrusaSlicer-default homing is preserved in v4 (the manual
+\texttt{M0} pause used in v3 is no longer required because each
+shape is run as a self-contained print). Confirm the
+slicer-generated header begins with \texttt{M92 E2651.19} and
+\texttt{G28}; the head will return to the bed corner for the
+first move.
+
+\begin{lstlisting}[style=shell]
+; Start G-code (PrusaSlicer default for DIW printer)
+M92 E2651.19
+G28          ; home all axes
+G1 Z5 F5000  ; lift nozzle
+G21          ; mm
+G90          ; absolute coords
+M82          ; absolute E
+G92 E0
+G1 E1 F3000  ; prime
+G92 E0
+
+; End G-code
+G1 Z30 F600
+M84
+\end{lstlisting}
+
+\begin{warningbox}
+If the printer's mechanical Z-zero is set above the substrate
+(safety lift) rather than at substrate contact, jog Z down and
+issue \texttt{G92 Z0} \emph{before} starting the print --- the
+slicer assumes substrate contact at $Z=0$.
+\end{warningbox}
+
+% =======================================================
+\section{Test matrix and execution order}
+\label{sec:matrix}
+
+\subsection{Sweep grids}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{2.8cm} p{2.8cm} p{2.8cm} p{2.8cm}}
+\toprule
+Shape & $v_\mathrm{print}$ (mm/s) & EM & Total G-codes \\
+\midrule
+Area-Cube & 5, 7, 10, 15, 30 & 1.0, 1.5, 2.0 & 15 \\
+S-Test    & 5, 7, 10, 15, 30 & 1.0, 1.57, 2.0, 2.5 & 20 \\
+Cubes (hollow) & 5, 7, 10, 15, 30 & 1.0, 1.57, 2.0 & 15 (planned) \\
+Tower-20mm & 5, 10, 15 & 1.0, 1.57 & 6 (planned) \\
+Tower-40mm & 5, 10 & 1.0, 1.57 & 4 (planned) \\
+Scaffold 0/90 & 5, 7, 10, 15, 30 & 1.0, 1.57, 2.0 & 15 (planned) \\
+Bridge & 5, 10, 15 & 1.0, 1.57 & 6 (planned) \\
+Misc & per-shape (single best-EM scout) & 1.57 (or refined) & TBD \\
+\bottomrule
+\end{tabular}
+\caption{Sweep grids per shape. ``Planned'' entries are
+under generation by the operator; the SOP is forward-compatible.
+The S-Test grid is the most exhaustive because the raster
+printability index is the headline metric in the literature.}
+\label{tab:sweep_grids}
+\end{table}
+
+\subsection{Recommended execution order}
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+\item \textbf{S-Test full grid (20 prints).} Establishes the
+$(v_\mathrm{print}, \mathrm{EM})$ window for the ink. The raster
+geometry is the most sensitive to misalignment of EM with the
+ink's recovery, so it converges first.
+\item \textbf{Area-Cube grid (15 prints).} Validates the
+S-Test-derived window for filled regions.
+\item \textbf{Hollow Cube + Scaffold + Tower + Bridge} at the
+two or three operating points that survived S-Test scoring.
+\item \textbf{Misc shapes} as final demonstration prints at the
+single best operating point.
+\end{enumerate}
+
+% =======================================================
+\section{Photography protocol}
+\label{sec:imaging}
+
+Every printed specimen is photographed \emph{immediately after
+the print finishes} (before any relaxation) and \emph{again at
+$t=30$ min relaxation} (for shapes where slump matters: Tower,
+Scaffold, Bridge, Area-Cube). The intermediate window is not
+photographed.
+
+\subsection{Per print: two iPhone images}
+
+\begin{stepbox}{Image pair acquisition}
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+\item Mount iPhone in a fixed clamp directly above the print bed,
+camera plane parallel to the substrate. Mark the mount position
+on the bench --- it must be reproducible across all prints in a
+sweep.
+\item Set the iPhone to \textbf{standard Photo mode} (not Portrait,
+not Live, not RAW unless ProRAW is consistently used). HDR may
+remain on \emph{Auto} but must be consistent within a sweep.
+\item Capture \textbf{image A: with flash}. Tap to focus on the
+specimen centre, do not adjust exposure compensation.
+\item Capture \textbf{image B: without flash}, identical framing,
+same focus point.
+\item Filename convention:
+\texttt{<shape>\_Vp<N>\_Fr<X>\_<ink>\_<bg>\_<flash|noflash>.jpg}
+\begin{itemize}[leftmargin=1.4em]
+\item Example:
+\texttt{S-Test\_Vp10\_Flow1,57\_SF5.5\_Black\_flash.jpg}
+\end{itemize}
+\item Save the pair into the corresponding
+\texttt{Impressao 3D/<shape>/<ink>/<bg>/} subfolder.
+\end{enumerate}
+\end{stepbox}
+
+\begin{keybox}
+\textbf{Why a flash $+$ no-flash pair.} The flash image
+\emph{kills shadows and saturates highlights}, exposing geometry
+boundaries with high contrast --- ideal for edge detection. The
+no-flash image \emph{preserves the natural reflection / opacity
+gradient}, exposing layer-to-layer surface defects --- ideal for
+texture analysis. Together the pair carries more information
+than a single ``optimised'' shot, and an automated pipeline can
+choose channel-by-channel which image to use.
+\end{keybox}
+
+\subsection{Framing and substrate}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{4.2cm} p{10.2cm}}
+\toprule
+Aspect & Specification \\
+\midrule
+Camera axis & Perpendicular to substrate (top-down) for Cubes,
+  Area-Cube, S-Test, Scaffold; perpendicular to tower axis
+  (side-on) for Tower-20/40 and Bridge. \\
+Working distance &
+  Fixed; record it on the run sheet. The image pipeline cannot
+  recover absolute scale without either (a) a reference object in
+  frame or (b) a recorded working distance + iPhone lens focal
+  length. \\
+In-frame scale reference &
+  \emph{Strongly recommended}: place a printed RefBar (10$\times$1
+  mm, 0.4 mm tall) or a ruler segment alongside every specimen.
+  This is the same RefBar used in v3.0; STL still in
+  \texttt{OLD/CCC\_v1.stl}. \\
+Background &
+  Matte black or matte blue card, large enough to fill the field
+  of view. Avoid glossy substrates --- the flash returns a
+  specular peak that corrupts edge detection. \\
+Ambient lighting &
+  Consistent within a sweep. Overhead fluorescent OK, mixed
+  daylight + tungsten not OK. Record on the run sheet. \\
+\bottomrule
+\end{tabular}
+\caption{Framing rules. Working distance and lighting are
+recorded because the image pipeline (Section~\ref{sec:imaging_algo})
+operates in pixel space until a reference object provides
+mm-per-pixel calibration.}
+\label{tab:framing}
+\end{table}
+
+% =======================================================
+\section{Image-analysis pipeline (in development)}
+\label{sec:imaging_algo}
+
+The pipeline ingests the flash + no-flash pair and emits a
+single \emph{printability value} per specimen, in pixel units
+until a scale reference is provided. The full algorithm is
+under development; this section records the design intent so
+that the photography protocol remains forward-compatible.
+
+\subsection{Inputs and outputs}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+\item \textbf{Inputs.} Two JPEGs per print:
+\texttt{<...>\_flash.jpg} and \texttt{<...>\_noflash.jpg}, plus
+the gcode-derived metadata $(shape, v_\mathrm{print},
+\mathrm{EM}, h_\mathrm{layer}, ink, bg)$.
+\item \textbf{Outputs (pixel domain).} Per shape, a vector of
+geometric defect metrics --- e.g.\ for the S-Test: line-width
+mean and SD, raster spacing mean and SD, fraction of expected
+raster nodes resolved. For the hollow cube: perimeter
+deviation (px), corner radius (px). For towers: base-bulge
+width vs nominal (px). Pixel $\to$ mm conversion is deferred
+to a calibration revision the operator will supply.
+\item \textbf{Headline scalar.} Per shape, a single
+\emph{printability value} $\in [0, 1]$ combining the
+shape-specific metrics. Aggregation rule TBD during the
+brainstorming phase.
+\end{itemize}
+
+\subsection{Stages (intent, not implementation)}
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+\item \textbf{Pair registration.} Align the flash and no-flash
+images pixel-wise (small mount drift between shots is expected).
+\item \textbf{Background segmentation.} Background colour (black
+or blue) is metadata; threshold-based segmentation produces a
+foreground mask.
+\item \textbf{Reference-object detection.} If a RefBar or ruler
+is in frame, extract a px/mm scale; otherwise return pixel-only
+metrics.
+\item \textbf{Per-shape metric extraction.} A shape-specific
+module (one per row of Table~\ref{tab:shapes}) computes the
+defect metrics.
+\item \textbf{Score aggregation.} Per-shape printability value
+$\in [0,1]$.
+\end{enumerate}
+
+% =======================================================
+\section{Measurement protocols (manual fallback)}
+\label{sec:measure}
+
+Until the image-analysis pipeline is operational, each shape is
+scored manually. The protocols below are the human counterparts
+of the automated metrics in Section~\ref{sec:imaging_algo}.
+
+\subsection{Hollow cube}
+Visually rate perimeter continuity (closed vs broken) and
+corner sharpness (sharp / rounded / collapsed) on a 0--3 scale.
+Photograph top-down; measure inner and outer edge length with
+caliper; deviation from nominal is the headline number.
+
+\subsection{S-Test / raster}
+Photograph top-down. Count the number of expected raster
+turn-around nodes that are resolved (i.e.\ where the strand
+clearly reverses without fusing into the previous pass).
+Printability index $= N_\mathrm{resolved} / N_\mathrm{expected}$.
+
+\subsection{Area cubes (different heights)}
+For each height, measure the top-surface gap fraction
+(fraction of the patch where adjacent raster lines have not
+fused) on a top-down photograph. Caliper the total stack
+height vs $N_\mathrm{sliced} \cdot h_\mathrm{layer}$ for the
+stacking ratio (carries over from v3.0 C3).
+
+\subsection{Tower 20\,mm and 40\,mm}
+Side-on photograph during and after the print. Record the
+layer count at which base width first exceeds nominal by 10\%
+($N_\mathrm{exp}$). Compare to the SAOS prediction in
+\texttt{printing\_parameters\_per\_ink.csv}.
+
+\subsection{Scaffold 0/90}
+Top-down photograph after relaxation. Count the fraction of
+pores that remain open (no strand sag bridging the pore). Pore
+closure rate is the headline metric.
+
+\subsection{Bridge}
+Side-on photograph. Measure mid-span sag distance with caliper
+against a known span length. Sag fraction $=$ sag / span.
+
+\subsection{Misc shapes}
+Single qualitative verdict per shape: \emph{pass} (geometry
+recognisable, no major defects) / \emph{partial} (recognisable
+but with one major defect) / \emph{fail}.
+
+% =======================================================
+\section{Run sheet}
+\label{sec:runsheet}
+
+\begin{center}
+\small
+\begin{tabular}{|p{0.95\linewidth}|}
+\hline
+\textbf{Per-Shape Print Run Sheet} \quad
+Date: \rule{2.5cm}{0.4pt} \quad
+Operator: \rule{3cm}{0.4pt} \\
+\hline
+\textbf{Print metadata} \\
+Shape: \rule{4cm}{0.4pt} \quad
+G-code file: \rule{6cm}{0.4pt} \\
+$v_\mathrm{print}$ = \rule{1.4cm}{0.4pt}\,mm/s \quad
+EM = \rule{1.2cm}{0.4pt} \quad
+$h_\mathrm{layer}$ = \rule{1.4cm}{0.4pt}\,mm \\
+Ink: \rule{4cm}{0.4pt} \quad
+Batch: \rule{2.5cm}{0.4pt} \quad
+Needle: $\square$ 21G $\;\square$ 22G \\
+Substrate background: $\square$ Black $\;\square$ Blue $\;\square$ \rule{2.5cm}{0.4pt} \\[3pt]
+\hline
+\textbf{Pre-print} \\
+Filament diameter set to 14.3 mm? $\square$ Yes $\;\square$ No (STOP) \\
+Z-zero set at substrate contact? $\square$ Yes \\
+\hline
+\textbf{Photography (at end of print)} \\
+Mount position reproduced? $\square$ Yes \\
+Working distance: \rule{2cm}{0.4pt}\,cm \quad
+Ambient lighting: \rule{4cm}{0.4pt} \\
+Image A (flash) saved? $\square$ \quad
+Image B (no flash) saved? $\square$ \\
+$t=30$ min repeat pair (if applicable)? $\square$ \\
+\hline
+\textbf{Manual verdict (until imaging pipeline live)} \\
+\rule{0.93\linewidth}{0.4pt} \\
+\rule{0.93\linewidth}{0.4pt} \\
+\hline
+\end{tabular}
+\end{center}
+
+% =======================================================
+\section{Deprecation notice}
+
+The Consolidated Calibration Coupon workflow described in
+SOP v3.0 (\texttt{Latex/Printing\_Parameters\_SOP\_v3\_EN.tex}
+and \texttt{CCC\_v1.stl}) is \textbf{deprecated as of
+\today}. v3.0 and the legacy G-codes under
+\texttt{Impressao 3D/OLD/} remain in the repository for
+archival reference. The active workflow for all new prints is
+the per-shape suite defined in this document.
+
+% =======================================================
+\section{Changelog}
+
+\begin{description}
+\item[v4.0 (\today).] Replaced CCC\_v1 single-coupon workflow with
+per-shape benchmark suite (hollow cube, area cubes, S-test,
+tower 20/40, scaffold 0/90, bridge, misc). New iPhone flash $+$
+no-flash photography protocol with shape/ink/background
+subfolder hierarchy. Sweep grids over $(v_\mathrm{print},
+\mathrm{EM})$ documented per shape. Image-analysis pipeline
+placeholder added pending algorithm finalisation.
+\item[v3.0.] CCC\_v1 consolidated coupon with C1--C4 metrics on one specimen.
+\item[v2.0.] 18 hand-coded G-codes per ink (C1--C4 battery).
+\end{description}
+
+\end{document}

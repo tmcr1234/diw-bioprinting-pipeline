@@ -1,0 +1,45 @@
+[project]
+name = "diw-printability"
+version = "0.1.0"
+description = "DIW printability image-analysis pipeline (S-Test)"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "Pillow>=10.0",
+    "pillow-heif>=0.16",
+    "opencv-python>=4.9",
+    "scikit-image>=0.22",
+    "scikit-learn>=1.4",
+    "scipy>=1.11",
+    "torch>=2.2",
+    "torchvision>=0.17",
+]
+
+[project.optional-dependencies]
+sam2 = ["sam2 @ git+https://github.com/facebookresearch/sam2.git"]
+test = ["pytest>=7.4", "pytest-cov>=4.1"]
+
+[project.scripts]
+printability = "pipeline:main"
+
+[tool.setuptools]
+py-modules = [
+    "pipeline",
+    "cli",
+    "io_heic",
+    "gcode_parser",
+    "registration",
+    "background_model",
+    "consensus",
+    "quality",
+    "metrics_strand",
+    "metrics_pore",
+    "metrics_turn",
+    "cache",
+    "aggregator",
+    "sam2_service",
+]
+
+[tool.setuptools.packages.find]
+include = ["segmentation*"]

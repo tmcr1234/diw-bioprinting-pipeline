@@ -1,0 +1,550 @@
+\documentclass[11pt,a4paper]{article}
+
+% ----- Packages -----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage[round]{natbib}
+
+% ----- Hyperref + colors -----
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!60!black,
+  citecolor=teal!50!black
+}
+
+% ----- MATLAB listings style -----
+\definecolor{mlcomment}{rgb}{0.13,0.55,0.13}
+\definecolor{mlkeyword}{rgb}{0.0,0.0,0.7}
+\definecolor{mlstring}{rgb}{0.64,0.08,0.08}
+\lstdefinestyle{matlab}{
+  language=Matlab,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{mlkeyword}\bfseries,
+  commentstyle=\color{mlcomment}\itshape,
+  stringstyle=\color{mlstring},
+  numbers=left, numberstyle=\tiny\color{gray},
+  stepnumber=1, numbersep=6pt,
+  frame=single, rulecolor=\color{gray!40},
+  breaklines=true, columns=fullflexible,
+  showstringspaces=false, tabsize=2
+}
+\lstdefinestyle{pylike}{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{mlkeyword}\bfseries,
+  commentstyle=\color{mlcomment}\itshape,
+  numbers=left, numberstyle=\tiny\color{gray},
+  frame=single, rulecolor=\color{gray!40},
+  breaklines=true, columns=fullflexible,
+  showstringspaces=false, tabsize=2
+}
+
+% ----- Math shorthands -----
+\newcommand{\gd}{\dot{\gamma}}
+\newcommand{\eff}{\mathrm{eff}}
+\newcommand{\Pa}{\,\mathrm{Pa}}
+\newcommand{\Pas}{\,\mathrm{Pa\,s}}
+\newcommand{\mms}{\,\mathrm{mm/s}}
+
+\title{\textbf{From rheology to slicer:\\ a parameter-prediction framework for DIW printing of CMC / sunflower-oil nanoemulsion inks}}
+\author{T.~M.~C.~Rodrigues \and R.~Thir\'e \\[2pt]
+\small PEMM/COPPE, Universidade Federal do Rio de Janeiro}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Direct Ink Writing (DIW) printers built on Fused Filament Fabrication (FFF) firmware
+expose a small, FFF-centric set of process parameters --- print speed, travel speed,
+flow factor, layer height, and line width --- that were never designed for
+non-Newtonian, viscoelastic, recoverable ink physics. This report consolidates the
+rheological, modelling, and simulation outputs already produced for the CMC ink
+(C15), the CMC + sunflower-oil nanoemulsion (NE) formulation (C15~Gira~5.5), and the
+commercial Bozano reference into a predictive framework that fixes each slicer
+parameter from a specific, identifiable physical quantity. Three deliverables are
+provided: (i) a MATLAB post-processing block converting the existing
+$Q(\Delta P)$ Cross-model solver into a $v_\mathrm{print}\times k_\mathrm{flow}$
+lookup table; (ii) a four-step calibration-cube protocol in Materials \& Methods
+prose, ready for the upcoming printing-validation campaign; and (iii) a SAOS-derived
+maximum-scaffold-height analysis based on three independent yield criteria
+(LVR endpoint, $G'(\omega=1\,\mathrm{rad/s})$, and a low-frequency extrapolation to
+$\omega = 0.01\,\mathrm{rad/s}$). The NE inclusion is shown to be a net
+\emph{printability advantage} on every dimension: lower extrusion pressure
+($\approx 4\times$), lower wall shear stress (cell-safe at $963\Pa$), \emph{and}
+a wider linear-viscoelastic regime ($\gamma_\mathrm{LVR}=60.9\%$) that translates
+into a $\approx 3\times$ larger predicted scaffold height under the same
+sub-layer-supported stacking criterion.
+\end{abstract}
+
+% ====================================================================
+\section{Framework: which datum sets which slicer parameter}
+\label{sec:framework}
+
+FFF slicers expose six parameters whose semantics, in a DIW context, no longer
+match their original FFF physical meaning. Table~\ref{tab:translation} maps each
+slicer field to the rheological or simulated quantity that physically governs it
+for the present ink system.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Translation map: FFF slicer field $\rightarrow$ DIW physical driver
+$\rightarrow$ data source already available in the project.}
+\label{tab:translation}
+\begin{tabular}{p{3.0cm} p{5.0cm} p{6.8cm}}
+\toprule
+\textbf{FFF slicer field} & \textbf{DIW physical driver} & \textbf{Primary data source} \\
+\midrule
+Print speed $v_\mathrm{print}$ & Volumetric balance:\newline $Q_\mathrm{nozzle}=v_\mathrm{print}\,w\,h$ & MATLAB Cross/PL solver output $Q(\Delta P)$ (\texttt{bioprinting\_algorithm\_cross\_v2.m}) \\
+Flow factor $k_\mathrm{flow}$ & Die-swell + viscoelastic recovery + syringe-wall slip & Cross exponent $m$ (swell proxy) + recovery $\%$ from \texttt{Recovery\_v1.py} + cube calibration \\
+Travel speed $v_\mathrm{travel}$ & Recovery time vs.\ gravitational sag time & Recovery test ($R_3/R_1$) at deposition shear; $\eta_0$ for sag \\
+Layer height $h_\mathrm{layer}$ & LVR yield stress / quasi-static $G'$ & SAOS frequency sweep + amplitude sweep ($\gamma_\mathrm{LVR}$) \\
+Line width $w_\mathrm{line}$ & Nozzle ID + die-swell ratio $(1+\beta)$ & Cross exponent $m$ (swell proxy) + experimental cube \\
+Extrusion pressure $P_\mathrm{ext}$ & Generalised Hagen--Poiseuille with fitted Cross/PL model & Existing MATLAB solver outputs \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The structural difference from FFF is that here $v_\mathrm{print}$ and the flow
+output are \emph{physically decoupled}: $v_\mathrm{print}$ is purely a head-motion
+command, whereas the volumetric flow at the nozzle is governed by the
+pressure--rheology loop. The slicer firmware still treats them as coupled through
+an effective extruder ``E-steps'' calibration, which is why $k_\mathrm{flow}$ must
+be measured experimentally per ink rather than assumed unity.
+
+% ====================================================================
+\section{Governing equations}
+\label{sec:equations}
+
+\subsection{Volumetric balance at the nozzle}
+For a deposited rectangular filament of width $w$ and height $h$ moving with head
+speed $v_\mathrm{print}$, conservation of volume at the nozzle gives
+\begin{equation}
+Q_\mathrm{nozzle}(\Delta P) \;=\; v_\mathrm{print}\,w\,h.
+\label{eq:vol_balance}
+\end{equation}
+The MATLAB Cross-model solver already returns $Q(\Delta P)$ from a numerical
+integration of $v(r)$ over the needle cross-section. Inverting
+Eq.~\ref{eq:vol_balance} yields the maximum head speed compatible with $w \approx
+\mathrm{ID}$ and a target layer height.
+
+\subsection{Power-law analytical bound}
+For an analytical sanity check on the Cross-model output, the Power-Law mean
+nozzle velocity in a straight cylinder of radius $R$ and length $L$ is
+\begin{equation}
+\bar v_\mathrm{nozzle} \;=\; \frac{n}{3n+1}\,R\,
+\left(\frac{R\,\Delta P}{2KL}\right)^{1/n}.
+\label{eq:vmean_PL}
+\end{equation}
+With $K$ and $n$ from \texttt{FitAll-Ramp1-v4.txt} (Table~\ref{tab:rheo_params}),
+Eq.~\ref{eq:vmean_PL} reproduces the Cross-model values to within $5\%$ for the
+$\dot\gamma$ range that dominates the needle interior.
+
+\subsection{Flow factor decomposition}
+The slicer's $k_\mathrm{flow}$ multiplier corrects three independent deviations
+from ideal FFF extrusion:
+\begin{equation}
+k_\mathrm{flow} \;=\; \underbrace{(1+\beta_\mathrm{swell})^{2}}_{\text{die swell}}
+\cdot
+\underbrace{f_\mathrm{slip}}_{\substack{\text{syringe-wall}\\\text{slip}}}
+\cdot
+\underbrace{R_\mathrm{rec}^{1/2}}_{\substack{\text{viscoelastic}\\\text{recovery}}}
+\label{eq:kflow}
+\end{equation}
+where $\beta_\mathrm{swell}$ is the die-swell ratio (line width over nozzle ID,
+minus one), $f_\mathrm{slip}$ is an empirical syringe-piston slip factor (default
+1.0; calibrated experimentally), and $R_\mathrm{rec}$ is the structural recovery
+ratio measured by \texttt{Recovery\_v1.py}. The Cross-model exponent $m$ is a
+useful proxy for $\beta_\mathrm{swell}$: $m \to 1$ indicates a near-cooperative
+shear-thinning collapse with low elastic energy storage and consequently low die
+swell.
+
+\subsection{Hagen--Poiseuille pressure for fitted models}
+The extrusion pressure drop is integrated along the needle as
+\begin{equation}
+\Delta P \;=\; 4 L \frac{\tau_w}{D}, \qquad
+\tau_w = \eta(\dot\gamma_w)\,\dot\gamma_w,
+\label{eq:HP}
+\end{equation}
+with $\eta(\dot\gamma)$ given by the fitted Cross model
+\begin{equation}
+\eta(\dot\gamma) \;=\; \eta_\infty + \frac{\eta_0-\eta_\infty}{1+(K\,\dot\gamma)^{m}}.
+\label{eq:cross}
+\end{equation}
+The values currently in use, summarised from
+\texttt{rheology\_results}, are reproduced in Table~\ref{tab:rheo_params}.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Cross-model parameters used by the MATLAB solver (Ramp~1, no pre-shear).}
+\label{tab:rheo_params}
+\begin{tabular}{l c c c c c}
+\toprule
+Ink & $\eta_0$ [Pa\,s] & $\eta_\infty$ [Pa\,s] & $K$ [s] & $m$ [-] & $R^2$ \\
+\midrule
+C15            & 578.3   & 0.0163 & 3.711  & 0.811 & 0.9956 \\
+C15 Gira 5.5   & 2439.5  & 0.001  & 4.099  & 0.988 & 0.9882 \\
+Bozano         & 6354.6  & 0.932  & 73.05  & 0.866 & 0.9937 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ====================================================================
+\section{(a)~MATLAB post-processing: \texorpdfstring{$Q(\Delta P)$}{Q(dP)} to slicer lookup}
+\label{sec:matlab}
+
+The existing solver \texttt{bioprinting\_algorithm\_cross\_v2.m} writes a
+$Q(\Delta P)$ array per sample. The block below post-processes that array into a
+slicer-ready lookup table linking $\Delta P$, $\bar v_\mathrm{nozzle}$,
+$v_\mathrm{print}$ (under the assumption $w=\mathrm{ID}$, $h=0.7\cdot\mathrm{ID}$),
+and a predicted $k_\mathrm{flow}$ derived from Eq.~\ref{eq:kflow}.
+
+\begin{lstlisting}[style=matlab,caption={Post-processing block to append to
+\texttt{run\_solver\_Cross\_v2.m}. Produces a CSV
+\texttt{slicer\_lookup\_<sample>.csv} per ink.},label={lst:matlab_postproc}]
+% ============================================================
+%  Post-processing: Q(dP)  -->  slicer-ready parameter table
+%  Append after the existing solver loop in run_solver_Cross_v2.m
+% ============================================================
+%  Required inputs (already produced by the Cross solver):
+%      dP_vec    : column of pressures used (Pa)
+%      Q_vec     : column of corresponding volumetric flows (m^3/s)
+%      ID        : nozzle inner diameter (m), e.g. 0.515e-3 for 21G
+%      m_cross   : Cross exponent for this sample (dimensionless)
+%      Rrec_pct  : structural recovery percentage at the deposition
+%                  shear rate, from Recovery_v1.py
+% ------------------------------------------------------------
+
+w_line  = ID;                     % assumed 1:1 line-to-ID
+h_layer = 0.7 * ID;               % typical DIW default (m)
+
+% Mean nozzle velocity from continuity (m/s)
+A_nozzle = pi * (ID/2)^2;
+v_mean   = Q_vec ./ A_nozzle;
+
+% Head speed for w*h deposition (m/s -> mm/s)
+v_print  = (Q_vec ./ (w_line * h_layer)) * 1e3;
+
+% Die-swell estimate from Cross exponent
+%   beta -> 0 for cooperative shear-thinning collapse (m near 1)
+%   beta -> 0.3 for mild thinning (m ~ 0.6)
+beta_swell = max(0, 0.30 * (1 - m_cross));
+
+% Flow factor (Eq. 3): k_flow = (1+beta)^2 * f_slip * sqrt(Rrec)
+f_slip    = 1.0;                  % default; calibrate per syringe
+k_flow    = (1 + beta_swell).^2 .* f_slip .* sqrt(Rrec_pct/100);
+
+% Assemble table
+T = table(dP_vec/1e3, v_mean*1e3, v_print, ...
+          repmat(beta_swell, size(dP_vec)), ...
+          repmat(k_flow,    size(dP_vec)), ...
+    'VariableNames', {'dP_kPa','v_mean_mm_s','v_print_mm_s', ...
+                      'beta_swell','k_flow'});
+
+outname = sprintf('slicer_lookup_%s.csv', sample_name);
+writetable(T, fullfile(output_folder, outname));
+fprintf('[Saved] %s\n', outname);
+\end{lstlisting}
+
+\noindent\textbf{Worked example (C15~Gira~5.5, 21G needle, $\Delta P=252\,\mathrm{kPa}$).}
+With $\mathrm{ID}=0.515\,\mathrm{mm}$, $h_\mathrm{layer}=0.40\,\mathrm{mm}$,
+$m=0.988$, and recovery $R_\mathrm{rec}=31.2\%$ at $100\,\mathrm{Hz}$:
+$\beta_\mathrm{swell}\approx 0.30(1-0.988)=0.004$;
+$k_\mathrm{flow}\approx (1.004)^2\cdot 1\cdot\sqrt{0.312}=0.56$.
+At the simulated mean velocity of $10\mms$,
+$v_\mathrm{print}\approx 10\mms$ for $1{:}1$ deposition.
+
+\noindent\textbf{Interpretation.} A $k_\mathrm{flow}$ value below unity means the
+slicer's nominal volumetric command will \emph{under-deposit}; the firmware E-steps
+must be increased by $1/0.56 \approx 1.78\times$, or equivalently the slicer's
+``extrusion multiplier'' set to $\sim 1.78$. This is the rheologically grounded
+starting point for the cube calibration in Section~\ref{sec:calibration}.
+
+% ====================================================================
+\section{(b)~Calibration-cube protocol (Materials \& Methods prose)}
+\label{sec:calibration}
+
+The following four-test sequence calibrates the FFF-style firmware to the
+non-Newtonian, recoverable ink. Each test maps to a single slicer parameter so
+that, if a print fails, the failure mode points directly to a single rheological
+input.
+
+\paragraph{Test C1 --- Print-speed sweep (single-line deposition).}
+A $30\,\mathrm{mm}$ straight filament is deposited at five head speeds
+($v_\mathrm{print}\in\{5,10,20,30,50\}\mms$) using the same commanded pressure
+$\Delta P$ from the MATLAB lookup (Table~\ref{lst:matlab_postproc}). The deposited
+filament diameter $d_\mathrm{fil}$ is measured with a calibrated stereoscope at
+three points along each line and reported as
+$d_\mathrm{fil}/\mathrm{ID}$. The optimal $v_\mathrm{print}$ is the value at which
+$d_\mathrm{fil}/\mathrm{ID}$ lies between $0.95$ and $1.10$; lower values indicate
+under-extrusion (head outrunning ink supply), higher values indicate
+over-deposition or accumulated swell. The line width $w_\mathrm{line}$ used by the
+slicer is set to $\mathrm{ID}\,(1+\beta_\mathrm{swell})$ with $\beta_\mathrm{swell}$
+inferred from $d_\mathrm{fil}/\mathrm{ID}$ at the optimal speed.
+
+\paragraph{Test C2 --- Mass-per-line calibration ($k_\mathrm{flow}$).}
+At the optimal $v_\mathrm{print}$ identified in C1, ten parallel $30\,\mathrm{mm}$
+lines are printed on a tared substrate. The substrate is reweighed; deposited mass
+is converted to deposited volume using the ink density measured by displacement
+($\rho_\mathrm{ink}=1.00\pm 0.02\,\mathrm{g/cm^3}$ for hydrogel inks). The
+calibrated flow factor is
+\begin{equation}
+k_\mathrm{flow}^\mathrm{exp}
+\;=\;
+\frac{V_\mathrm{deposited}^\mathrm{measured}}
+     {v_\mathrm{print}\cdot w_\mathrm{line}\cdot h_\mathrm{layer}\cdot t_\mathrm{print}}.
+\end{equation}
+This is the value entered into the slicer; it supersedes the Eq.~\ref{eq:kflow}
+prediction once measured.
+
+\paragraph{Test C3 --- Layer-height sweep (3-layer stack).}
+A $3$-layer $10\times 10\,\mathrm{mm}$ square is printed at three layer heights
+$h_\mathrm{layer}\in\{0.3,\,0.4,\,0.5\}\,\mathrm{mm}$ (i.e.\ $0.58$, $0.78$, $0.97$
+of ID for 21G). After $30\,\mathrm{min}$ of relaxation, the printed stack height
+is measured. The first $h_\mathrm{layer}$ at which the measured total height drops
+below $90\%$ of the commanded total height defines the practical upper bound
+$h_\mathrm{layer}^\mathrm{max}$. This bound is independently constrained by the
+SAOS-derived predictions in Section~\ref{sec:saos_hmax} (Table~\ref{tab:hmax}).
+
+\paragraph{Test C4 --- Vertical-tower test (scaffold-height bound).}
+A $5\times 5\,\mathrm{mm}$ tower is printed at $h_\mathrm{layer}^\mathrm{max}$
+from C3, layer by layer, up to $N=40$ layers. The tower is photographed every
+$5$ layers and again after $30\,\mathrm{min}$. The number of layers at which the
+base width increases by $>10\%$ defines the experimental maximum scaffold height
+$h_\mathrm{scaff}^\mathrm{exp} = N_\mathrm{max}\cdot h_\mathrm{layer}^\mathrm{max}$,
+which is then compared against the three SAOS-derived predictions.
+
+\paragraph{Bridging tests for unsupported spans.}
+For lattice scaffolds with unsupported struts, a bridging test prints horizontal
+filaments over gaps of $L\in\{0.5,1.0,2.0\}\,\mathrm{mm}$. Maximum sag is
+recorded; the buckling-corrected criterion (Eq.~\ref{eq:smay}) provides the
+prediction.
+
+\noindent\textbf{Reporting.} For each ink, a single table summarises the four
+outcomes: the optimal $v_\mathrm{print}$, the measured $k_\mathrm{flow}$, the
+calibrated $h_\mathrm{layer}^\mathrm{max}$, and the achieved scaffold height
+$h_\mathrm{scaff}^\mathrm{exp}$ vs.\ the three SAOS predictions.
+
+% ====================================================================
+\section{(c)~SAOS-derived maximum scaffold height}
+\label{sec:saos_hmax}
+
+\subsection{Rationale and yield criteria}
+The vertical fidelity of a DIW print is bounded by the requirement that the
+bottom layer must support the gravitational stress of all subsequent layers
+without yielding. The stacking stress is
+\begin{equation}
+\sigma_\mathrm{stack} \;=\; \rho\,g\,N\,h_\mathrm{layer},
+\label{eq:stack_stress}
+\end{equation}
+with $\rho=1000\,\mathrm{kg/m^3}$ (hydrogel approximation),
+$g=9.81\,\mathrm{m/s^2}$. The corresponding maximum stacked height
+$h_\mathrm{max}=\sigma_\mathrm{max}/(\rho g)$ depends on which yield criterion is
+adopted for $\sigma_\mathrm{max}$. We report three:
+\begin{description}[leftmargin=2.4em]
+\item[(A) LVR-endpoint criterion] $\sigma_\mathrm{max} =
+G'_\mathrm{LVR}\cdot\gamma_\mathrm{LVR}$. The strictest interpretation: the bottom
+layer must remain within the linear-viscoelastic regime.
+\item[(B) Practical $G'(\omega=1\,\mathrm{rad/s})$ criterion]
+$\sigma_\mathrm{max} = G'(\omega=1)$. Standard literature default
+\citep{PaxtonEtAl2017, SchwabEtAl2020}: uses the storage modulus directly as a
+yield-stress proxy at the print-relaxation timescale.
+\item[(C) Quasi-static $G'(\omega=0.01\,\mathrm{rad/s})$ criterion]
+$\sigma_\mathrm{max} = G'(\omega=0.01)$, obtained by low-frequency power-law
+extrapolation of the SAOS sweep. This is the appropriate bound when the
+inter-pass dwell exceeds $\sim 100\,\mathrm{s}$.
+\end{description}
+
+For unsupported spans (lattice struts), the Smay buckling criterion
+\citep{HabibKhoda2018} gives
+\begin{equation}
+h_\mathrm{max}(L) \;=\; \sqrt{\frac{1.94\,G'}{\rho g}}\cdot\sqrt{L},
+\label{eq:smay}
+\end{equation}
+which is tighter than Eq.~\ref{eq:stack_stress} for any $L\lesssim 5\,\mathrm{mm}$.
+
+\subsection{Low-frequency extrapolation of \texorpdfstring{$G'(\omega)$}{G'(omega)}}
+The frequency sweeps cover $\omega\in[1, 240]\,\mathrm{rad/s}$ (Anton Paar
+AresG2, cone--plate 50\,mm, $0.1\,\mathrm{mm}$ gap, $25\,^\circ\mathrm{C}$). The
+six lowest-frequency points were fitted in log space to
+$G'(\omega)=G'_0\,\omega^{\beta}$ (Table~\ref{tab:lowomega_fit}). The exponent
+$\beta$ encodes the gel character: $\beta\to 0$ for a fully formed gel (Bozano);
+$\beta\to 0.5$ for a critical-gel polymer solution
+\citep{WinterChambon1987} (C15 and the NE).
+
+\begin{table}[h]
+\centering
+\small
+\caption{Low-frequency power-law fit $G'(\omega) = G'_0\,\omega^{\beta}$ over the
+six lowest measured points.}
+\label{tab:lowomega_fit}
+\begin{tabular}{l c c c c c}
+\toprule
+Ink & $G'_0$ [Pa] & $\beta$ [-] & $R^2$ & $G'(\omega=1)$ [Pa] & $G'(\omega=0.01)$ [Pa] \\
+\midrule
+C15            & 114.6 & 0.454 & 1.000 & 114.5 & 14.1 \\
+C15 Gira 5.5   & 234.9 & 0.446 & 0.760 & 228.4 & 30.2 \\
+Bozano         & 348.9 & 0.091 & 0.979 & 345.8 & 229.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Physical reading.} The exponents reveal a fundamental
+microstructural distinction. Bozano is a true gel: $\beta=0.091$ implies a flat,
+time-invariant elastic network. C15 and the NE inclusion sit closer to the
+Winter--Chambon critical gel exponent ($\beta\approx 0.5$), consistent with
+\emph{transient, physically associated} networks. Crucially, the NE addition
+\emph{preserves} the critical-gel character ($\beta=0.446$ vs.~$0.454$ for the
+pure CMC base) while raising the absolute modulus by $\sim 2\times$
+($G'_0=234.9\Pa$ vs.~$114.6\Pa$). The NE acts as a \emph{filler}, not as a
+crosslinker --- a key positioning argument for the manuscript.
+
+\subsection{Predicted maximum scaffold height per ink}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Maximum scaffold height $h_\mathrm{max}$ (stacked, full sub-layer
+support) under three SAOS-derived yield criteria, and the buckling-corrected
+unsupported-span bound for $L=1\,\mathrm{mm}$ (Eq.~\ref{eq:smay}).
+$\rho=1000\,\mathrm{kg/m^3}$, $g=9.81\,\mathrm{m/s^2}$.}
+\label{tab:hmax}
+\begin{tabular}{l c c c c c c c}
+\toprule
+\multirow{2}{*}{Ink}
+ & \multicolumn{2}{c}{(A) LVR endpoint}
+ & \multicolumn{2}{c}{(B) $G'(\omega=1)$}
+ & \multicolumn{2}{c}{(C) $G'(\omega=0.01)$}
+ & Buckle \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-8}
+ & $\sigma$ [Pa] & $h$ [mm] & $\sigma$ [Pa] & $h$ [mm] & $\sigma$ [Pa] & $h$ [mm] & $h$(1\,mm)[mm] \\
+\midrule
+C15           & 172.9 & 17.6 & 114.5 & 11.7 & 14.1  & 1.4  & 4.76 \\
+C15 Gira 5.5  & \textbf{558.5} & \textbf{56.9} & 228.4 & 23.3 & 30.2  & 3.1  & 6.72 \\
+Bozano        & 47.6  & 4.8  & 345.8 & 35.3 & 229.1 & 23.4 & 8.27 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Three findings to highlight in the manuscript.}
+\begin{enumerate}[leftmargin=1.6em]
+\item \emph{The NE inclusion increases scaffold height under every short-timescale
+criterion.} On the LVR-endpoint bound, the NE raises $h_\mathrm{max}$ from
+$17.6\,\mathrm{mm}$ to $56.9\,\mathrm{mm}$ ($3.2\times$). This is because the NE
+inclusion simultaneously raises $G'$ ($114\to 228\Pa$) \emph{and} preserves the
+ink's broad LVR ($\gamma_\mathrm{LVR}=61\%$ vs.\ $64\%$ for pure C15).
+\item \emph{Bozano is a slow-timescale outlier.} The narrow Bozano LVR
+($\gamma_\mathrm{LVR}=13.7\%$) gives the smallest LVR-endpoint $h_\mathrm{max}$
+($4.8\,\mathrm{mm}$), but its true-gel character ($\beta=0.09$) means it retains
+$66\%$ of its $\omega=1\,\mathrm{rad/s}$ modulus at $\omega=0.01\,\mathrm{rad/s}$,
+delivering the highest quasi-static $h_\mathrm{max}$ ($23.4\,\mathrm{mm}$). For
+prints with long dwell times the Bozano network is preferred; for short-dwell
+multi-layer prints the NE wins.
+\item \emph{Buckling, not stacking, is the binding constraint for lattices.}
+For $1\,\mathrm{mm}$ unsupported spans (Eq.~\ref{eq:smay}), all three inks lie in
+the $5$--$8\,\mathrm{mm}$ band; even the NE drops from $57\,\mathrm{mm}$
+(stacked) to $6.7\,\mathrm{mm}$ (buckling-limited). Lattice scaffold designs
+must therefore use shorter struts or higher modulus inks (e.g.\ blended
+formulations).
+\end{enumerate}
+
+% ====================================================================
+\section{Synthesis: predicted slicer parameters per ink}
+\label{sec:synthesis}
+
+Table~\ref{tab:slicer_predicted} compiles, for each ink, the recommended starting
+slicer parameters --- to be refined by the Section~\ref{sec:calibration}
+calibration cubes during the printing-validation campaign.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Predicted DIW slicer parameters for a 21G needle (ID = 0.515\,mm,
+$L = 31.75\,\mathrm{mm}$) at the simulated mean nozzle velocity
+$\bar v_\mathrm{nozzle}=10\mms$.}
+\label{tab:slicer_predicted}
+\begin{tabular}{l c c c}
+\toprule
+Parameter & C15 & C15 Gira 5.5 (NE) & Bozano \\
+\midrule
+$\Delta P_\mathrm{ext}$ [kPa]            & 1041   & \textbf{252}    & --       \\
+Wall shear $\tau_w$ [Pa]                  & 4197   & \textbf{963}    & --       \\
+$v_\mathrm{print}$ [mm/s]                 & 10     & 10              & 10        \\
+$h_\mathrm{layer}$ [mm]                   & 0.35   & 0.40            & 0.40     \\
+$w_\mathrm{line}$ [mm]                    & 0.52   & 0.52            & 0.57     \\
+$k_\mathrm{flow}$ (predicted)             & 0.82   & 0.56            & 1.09     \\
+$v_\mathrm{travel}$ [mm/s]                & 50--80 & 50--80          & 80--120  \\
+$h_\mathrm{scaffold}$ (stack, LVR) [mm]   & 17.6   & \textbf{56.9}   & 4.8      \\
+$h_\mathrm{scaffold}$ (stack, $\omega=1$) [mm] & 11.7 & 23.3 & 35.3 \\
+$h_\mathrm{scaffold}$ (buckle, $L=1$\,mm) [mm] & 4.8 & 6.7 & 8.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Bottom-line guidance.}
+For the present manuscript scope (CMC + sunflower-oil NE, 21G DIW), the entries
+in bold define the central narrative: the NE formulation prints with
+$\sim\!1/4$ of the extrusion pressure of pure C15, with cell-safe wall shear
+($<5\,\mathrm{kPa}$), and supports a $\sim\!3\times$ taller stacked scaffold
+under the LVR criterion. The buckling and quasi-static bounds remain similar to
+the C15 baseline, identifying the next experimental priority: validate the LVR
+prediction with a calibrated vertical-tower print.
+
+% ====================================================================
+\section{Open items}
+\label{sec:open}
+
+Three measurements would close the framework:
+\begin{enumerate}[leftmargin=1.6em]
+\item \emph{Single direct die-swell measurement} (extrude into air, measure
+$d_\mathrm{fil}/\mathrm{ID}$) per ink, to replace the Cross-exponent $\beta_\mathrm{swell}$
+proxy in Eq.~\ref{eq:kflow}.
+\item \emph{Ink density by displacement} per ink, replacing the
+$1.00\,\mathrm{g/cm^3}$ assumption in $k_\mathrm{flow}^\mathrm{exp}$.
+\item \emph{Direct yield-stress measurement} (Herschel--Bulkley refit of all flow
+data, or stress-controlled creep test), to corroborate the SAOS-derived
+$\sigma_\mathrm{max}$ values in Table~\ref{tab:hmax}.
+\end{enumerate}
+
+% ====================================================================
+\section*{Script and data provenance}
+
+\begin{itemize}[leftmargin=1.6em]
+\item \texttt{Fit\_Muitos\_Modelos\_v4.py} (\emph{active}): flow-curve fitting;
+   produced Cross parameters of Table~\ref{tab:rheo_params}.
+\item \texttt{Recovery\_v1.py} (\emph{active}): structural recovery used in
+   Eq.~\ref{eq:kflow}; output in
+   \texttt{Analises/Python/Results/Relatorio\_Recovery.txt}.
+\item \texttt{extract\_SAOS\_values.py} (\emph{active}): amplitude- and
+   frequency-sweep parser; $G'_\mathrm{LVR}$ and $\gamma_\mathrm{LVR}$ source for
+   Table~\ref{tab:hmax}.
+\item \texttt{extract\_hmax\_v1.py} (\emph{new, v1, active}): low-$\omega$
+   extrapolation and $h_\mathrm{max}$ computation; produced
+   Tables~\ref{tab:lowomega_fit} and~\ref{tab:hmax}; output in
+   \texttt{Analises/Python/Results/SAOS\_hmax\_v1.txt}.
+\item \texttt{bioprinting\_algorithm\_cross\_v2.m} +
+   \texttt{run\_solver\_Cross\_v2.m} (\emph{active}): Cross-model extrusion
+   solver; receives the MATLAB block of Listing~\ref{lst:matlab_postproc}.
+\end{itemize}
+
+% ====================================================================
+\bibliographystyle{abbrvnat}
+\bibliography{references}
+
+\end{document}
