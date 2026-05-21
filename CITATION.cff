@@ -1,0 +1,54 @@
+# Citation File Format -- https://citation-file-format.github.io/
+# This file lets GitHub render a "Cite this repository" button and
+# enables Zenodo / Google Scholar to index the software automatically.
+
+cff-version: 1.2.0
+message: "If you use this pipeline in academic work, please cite it as below."
+
+title: "DIW Bioprinting -- Portable Analysis Pipeline"
+
+abstract: >-
+  Self-contained Python + MATLAB tooling for characterising
+  direct ink writing (DIW) bioinks: fitting rheological constitutive
+  models (Power Law, Cross, Carreau, Herschel-Bulkley, Bingham,
+  Casson, Ellis) to flow-curve data, extracting SAOS / recovery /
+  h_max parameters from oscillatory rheology, simulating
+  syringe-needle extrusion (Power-Law and Cross solvers, straight or
+  tapered geometries) to produce slicer-lookup tables, and
+  validating prints from images via the Ouyang printability index.
+
+type: software
+version: "0.1.0"
+date-released: 2026-05-21
+
+repository-code: "https://github.com/tmcr1234/diw-bioprinting-pipeline"
+url: "https://github.com/tmcr1234/diw-bioprinting-pipeline"
+
+license: CC-BY-NC-4.0
+
+authors:
+  - family-names: Rodrigues
+    given-names: "Thiago Matos Custodio"
+    affiliation: >-
+      Programa de Engenharia Metalurgica e de Materiais (PEMM),
+      COPPE -- Universidade Federal do Rio de Janeiro (UFRJ),
+      Rio de Janeiro, Brazil
+    email: thiagomcr@uol.com.br
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # uncomment and fill in when ORCID is available
+
+keywords:
+  - bioprinting
+  - direct ink writing
+  - DIW
+  - rheology
+  - extrusion simulation
+  - printability
+  - power law
+  - Cross model
+  - SAOS
+  - thixotropy
+  - 3iTT
+  - bioink
+  - hydrogel
+  - CMC
+  - nanoemulsion
