@@ -1,9 +1,20 @@
 # DIW Bioprinting — Portable Analysis Pipeline
 
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![MATLAB](https://img.shields.io/badge/MATLAB-R2020a%2B-orange.svg)](https://www.mathworks.com/products/matlab.html)
+[![Cite this](https://img.shields.io/badge/Cite-CITATION.cff-brightgreen.svg)](./CITATION.cff)
+
 Self-contained export of the Python + MATLAB tooling used to characterise
 DIW (Direct Ink Writing) bioinks, predict their printability from rheology,
 and validate prints on the bench. Designed so a new intern or master's student
 can pick this up on day one with their own ink and run the full pipeline.
+
+> **License note:** This repository is licensed under [CC BY-NC 4.0](./LICENSE).
+> GitHub's automatic license detector does not recognise CC BY-NC 4.0 (it
+> only auto-tags 13 OSI-style licenses), so the sidebar may display
+> "Other" — the licence is nonetheless the canonical CC BY-NC 4.0 legal
+> code from creativecommons.org and is fully binding.
 
 ---
 
