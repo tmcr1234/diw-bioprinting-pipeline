@@ -53,8 +53,8 @@ Must be run from the project root (relative paths).
 The single number this script produces that the **MATLAB solver consumes** is
 `Rrec_pct` (recovery percentage at deposition shear). Pick the recovery value
 closest to your expected wall shear rate inside the nozzle (typically the
-150–300 s⁻¹ band) and paste it into `samples(...).Rrec_pct` in
-`02_MATLAB/run_solver_v3.m`.
+150–300 s⁻¹ band) and paste it into `inks(...).Rrec_pct` in
+`02_MATLAB/run_solver_v4.m`.
 
 `k_flow = (1 + β_swell)² · √(Rrec/100)` — recovery enters the slicer flow
 multiplier under the square root. A drop from 95 % → 50 % recovery cuts

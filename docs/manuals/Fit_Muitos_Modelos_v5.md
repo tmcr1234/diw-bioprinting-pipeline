@@ -75,11 +75,12 @@ the same folder). **No `xlrd` required** — that's v4's dependency.
 - **Ellis tends to win the viscosity-domain AIC** for our Rheocompass data —
   often by < 5 AIC units over Cross. That's the model's 3-parameter
   parsimony bonus, not a physical superiority. If the downstream MATLAB
-  solver needs Cross parameters (`run_solver_v3.m` uses Cross by default),
-  use the Cross row from the CSV regardless of who wins the AIC race.
+  solver needs Cross parameters (`run_solver_v4.m` computes the Cross model
+  alongside Power-Law), use the Cross row from the CSV regardless of who wins
+  the AIC race.
 - **HB usually collapses to PL** (`tau0 ~ 1e-16`) when the flow curve doesn't
   reach the LVR plateau at low γ̇. This is correct behaviour, not a bug —
-  the data simply doesn't constrain `tau0`. Use `extract_hmax_v2.py` to
+  the data simply doesn't constrain `tau0`. Use `extract_hmax_v3.py` to
   get the yield stress from the amplitude sweep instead.
 - **`Status` column is preserved** in the parsed DataFrame but **not used**
   by the fitter. Anton Paar emits flags like `M-` (motor limit hit),
@@ -105,17 +106,18 @@ will mis-label columns. The fix is one block in `antpar_io.py` (the
 
 After running, copy the **Cross row** (eta0, eta_inf, K, m) and the
 **PowerLaw row** (K, n) for each ink from `FitAll-AntPar-v5.csv` into
-the `samples(...)` struct at the top of `02_MATLAB/run_solver_v3.m`. Field
-mapping:
+the `inks(...)` struct at the top of `02_MATLAB/run_solver_v4.m` (fields live
+on the `Ramp1` / `Ramp2` sub-struct for the no-pre-shear / pre-shear fit).
+Field mapping (for a no-pre-shear fit):
 
 | CSV column | MATLAB field |
 |---|---|
-| `K` (PowerLaw row) | `samples(i).K_PL` |
-| `n` (PowerLaw row) | `samples(i).n_PL` |
-| `eta0` (Cross row) | `samples(i).eta0` |
-| `eta_inf` (Cross row) | `samples(i).etaInf` |
-| `K` (Cross row) — Cross uses K for `1/λ` | `samples(i).lambda = 1/K` |
-| `m` (Cross row) | `samples(i).m_Cross` |
+| `K` (PowerLaw row) | `inks(i).Ramp1.K_PL` |
+| `n` (PowerLaw row) | `inks(i).Ramp1.n_PL` |
+| `eta0` (Cross row) | `inks(i).Ramp1.eta0` |
+| `eta_inf` (Cross row) | `inks(i).Ramp1.etaInf` |
+| `K` (Cross row) — Cross uses K for `1/λ` | `inks(i).Ramp1.lambda = 1/K` |
+| `m` (Cross row) | `inks(i).Ramp1.m_Cross` |
 
 > ⚠ Note: v5's Cross uses `K` as the inverse of the Cross time constant λ
 > (this matches the curve_fit-friendly form `1 + (K·γ̇)ᵐ`). The MATLAB

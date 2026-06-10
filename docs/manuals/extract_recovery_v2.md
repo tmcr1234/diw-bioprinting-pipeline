@@ -186,7 +186,7 @@ Recovery is consumed by:
 
 | Downstream | What it pulls | Future |
 |---|---|---|
-| `bioprinting_algorithm_v3.m` | `samples(i).Rrec_pct` — pick one of the two ratios | manual paste from CSV — pick whichever matches your physical interpretation |
+| `run_solver_v4.m` (slicer layer of `bioprinting_algorithm_v4`) | `inks(i).Rrec_pct` — pick one of the two ratios | manual paste from CSV — pick whichever matches your physical interpretation |
 | Manuscript tables | All columns of the CSV | direct LaTeX/Markdown rendering |
 | `extract_hmax_v3` (pending) | Not used — h_max draws from SAOS, not 3iTT | — |
 

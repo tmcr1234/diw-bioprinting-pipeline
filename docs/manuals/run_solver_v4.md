@@ -1,33 +1,22 @@
 # `run_solver_v4.m` — One-Shot Master Driver
 
-> **STATUS:** `draft` (smoke-test pending). Once validated against `run_solver_v3.m`
-> on a known-good ink set, this will be promoted to `active` and become the
-> primary MATLAB entry point.
+> **STATUS:** `active` — the **sole** MATLAB extrusion driver. It replaces
+> `run_solver_v3.m`, `run_solver_improved.m`, and `run_solver_Cross_v2.m`,
+> all of which are now deprecated (see `SCRIPT_REGISTRY.md`).
 >
-> **v4.1 iteration (2026-05-21):** added per-ink ramp optionality and the
-> per-subset `all_samples_velocity_<orientation>.png` overlay. See the
-> "Per-subset cross-ink overlay" and "Inks with only one ramp" sections below.
->
-> **v4.2 iteration (2026-05-21):** headless-figures mode by default (no GUI
-> windows pop up during the run; restored on exit via `onCleanup` even on
-> Ctrl-C / error) and simplified `Vp` folder-name convention
-> (`Vp10mmps` / `Vp0p01mmps` instead of `Vp_10_mmps` / `Vp_0p01_mmps`). See
-> the "Configuration" and "Folder-name convention" sections.
+> **2026-06-01 rewrite:** the driver no longer orchestrates three separate
+> solvers. It makes a single call to the unified superset solver
+> [`bioprinting_algorithm_v4.m`](bioprinting_algorithm_v4.md) per
+> `(ramp × ink × needle)`, which computes the Power-Law **and** Cross results,
+> the radial profiles, and the slicer parameters together.
 
 ## Purpose
 
-Single execution that reproduces, in one folder tree, every output that
-previously required manual reruns of three separate drivers:
-
-- the legacy per-sample **radial-profile** workflow from `run_solver_improved.m`
-  (Power-Law) and `run_solver_Cross_v2.m` (Cross) — 4 PNGs + `_data.txt` per
-  sample, per piston velocity, and
-- the legacy **cross-ink overlay** (`all_samples_velocity_<orientation>.png`)
-  emitted per `{ramp, Vp, needle, model}` subset, and
-- the **slicer-lookup** workflow from `run_solver_v3.m` (PL + Cross CSV +
-  4-panel summary PNG), and
-- a new **long-format master summary** with one row per
-  `{ramp × ink × needle × Vp × model}`.
+One execution produces, in a single `output_v4/` tree, every output that
+previously required separate runs of three drivers: per-operating-point radial
+profiles (Power-Law + Cross), the slicer-lookup CSV, an across-`Vp` trend
+summary, and a long-format master summary spanning all inks, needles, ramps,
+velocities, and both constitutive models.
 
 ## What it produces
 
@@ -35,126 +24,82 @@ Inside `output_v4/`:
 
 | Path | Contents |
 |---|---|
-| `<Ramp>/Vp<v>mmps/PL_<needle>/<ink> - *.png` + `<ink>_data.txt` | Per-ink legacy 4-panel PNGs (velocity / shear-rate / shear-stress / system overview) + raw radial-profile text dump, for the Power-Law solver |
-| `<Ramp>/Vp<v>mmps/PL_<needle>/all_samples_velocity_<orientation>.png` | **Cross-ink overlay** for that subset — needle + syringe radial velocity profiles, one curve per ink that has parameters for this ramp |
-| `<Ramp>/Vp<v>mmps/Cross_<needle>/...` | Same set of outputs for the Cross solver (called with `Rn_in = Rn_out` so it degenerates to a straight cylinder, matching the PL geometry) |
-| `slicer_lookup/<Ramp>/slicer_lookup_<ink>_<needle>.csv` | Per-(ink × needle) slicer CSV, PL & Cross side-by-side, swept over the full `Vp` vector |
-| `slicer_lookup/<Ramp>/plots_<ink>_<needle>.png` | 4-panel summary (ΔP, wall shear rate, head speed, k_flow) |
-| `master_summary_v4.csv` | **Long format**: one row per `{ramp, ink, needle, Vp, model}` |
+| `<Ramp>/Vp<v>mmps/<ink>_<needle>_data.txt` | Combined human-readable dump — Power-Law section + Cross section (legacy `_data.txt` format), including the radial profiles for syringe and needle |
+| `<Ramp>/Vp<v>mmps/<ink>_<needle>_profiles.png` | Radial profiles `u(r)`, `γ̇(r)`, `τ(r)` (syringe + needle) for both models |
+| `<Ramp>/Vp<v>mmps/<ink>_<needle>_system.png` | System overview — pressure decomposition, generalised Reynolds, viscosity across the needle exit |
+| `<Ramp>/slicer_lookup_<ink>_<needle>.csv` | Across-`Vp` slicer table, PL & Cross side-by-side |
+| `<Ramp>/<ink>_<needle>_summary.png` | Across-`Vp` trends (ΔP, wall shear rate, head speed, k_flow) |
+| `master_summary_v4.csv` | **Long format** — one row per `{ramp, ink, needle, Vp, model}` |
 
 Master summary columns: `ramp, ink, needle, Vp_mm_s, model, Q_mm3_s,
-u_avg_needle_mm_s, u_max_needle_mm_s, tau_wall_needle_Pa,
-gamma_w_true_needle_invs, dP_total_kPa, Re_needle`.
+u_avg_needle_mm_s, u_max_needle_mm_s, tau_wall_needle_Pa, gamma_w_needle_invs,
+dP_total_kPa, Re_needle, v_print_mm_s, k_flow`.
 
-**PL vs Cross row asymmetry (read before filtering by column):**
+Two rows are written per operating point — one `PowerLaw`, one `Cross`. The
+`u_max_needle_mm_s` column is the analytical centreline for the PL row; the
+Cross row reports its profile maximum. Treat `gamma_w_needle_invs` and
+`Re_needle` as "wall metrics with model-specific definitions" (PL applies the
+Rabinowitsch correction; Cross integrates the discrete profile directly).
+`Q_mm3_s`, `tau_wall_needle_Pa`, and `dP_total_kPa` are directly comparable
+across the two rows.
 
-| Column | PL row source | Cross row source |
-|---|---|---|
-| `u_avg_needle_mm_s` | `results.flow.u_avg_needle` (constant cross-section) | `results.flow.u_avg_needle_exit` (Cross is tapered-aware; exit value) |
-| `u_max_needle_mm_s` | `results.flow.u_max_needle` (centreline value from analytical PL profile) | **`NaN`** — Cross algorithm doesn't expose a single `u_max` field |
-| `gamma_w_true_needle_invs` | Rabinowitsch-corrected true wall shear rate (`results.shear.gamma_dot_true_needle`) | `results.shear.gamma_dot_wall_needle` — max of the discrete radial-profile shear-rate solution. Equivalent to the wall value but no Rabinowitsch correction is applied (Cross integrates the profile directly) |
-| `Re_needle` | Generalised power-law Reynolds | Newtonian-form Reynolds with effective `η_wall = τ_wall / γ̇_wall` |
+### Folder-name convention
 
-When comparing PL vs Cross rows side-by-side, treat `gamma_w_true_needle_invs` and `Re_needle` as "wall metrics with different definitions" rather than identical quantities. The `Q_mm3_s`, `tau_wall_needle_Pa`, and `dP_total_kPa` columns are directly comparable.
+Each `Vp` value becomes a folder tag `Vp<value>mmps`, with any decimal point
+replaced by the letter `p`:
+
+| `cfg.Vp_mm_s(k)` | folder tag |
+|---|---|
+| `0.01` | `Vp0p01mmps` |
+| `0.003` | `Vp0p003mmps` |
+| `10` | `Vp10mmps` |
+
+**The number is the value of `Vp` in mm/s, not a truncated form.**
+`Vp0p01mmps` is Vp = 0.01 mm/s, not 10 mm/s.
 
 ## Inputs
 
-**Edit the `inks(...)` struct at the top of the script**. Each ink carries:
+**Edit the `inks(...)` struct at the top of the script** (lines ~62–78). Each
+ink carries:
 
 | Field | From | Notes |
 |---|---|---|
 | `name` | — | Canonical sample name (e.g. `C15`, `C15 Gira 5.5`, `Bozzano's Hair Gel`) |
-| `rho` | — | Density (kg/m³) — used by the legacy algorithms for generalised Reynolds |
-| `Rrec_pct` | `extract_recovery_v2.py` (or `Recovery_v1.py`) at deposition shear (typ. 150 s⁻¹) | Used by the v3 slicer layer for `k_flow` |
+| `rho` | — | Density (kg/m³) — used for the generalised Reynolds number |
+| `Rrec_pct` | `extract_recovery_v2.py` (or `Recovery_v1.py`) at the deposition wall shear rate (~200 s⁻¹) | Used by the slicer layer for `k_flow` |
 | `Ramp1` | `Fit_Muitos_Modelos_v5.py` (or v4) — **no-pre-shear** fit | Struct of `K_PL, n_PL, eta0, etaInf, lambda, m_Cross` |
-| `Ramp2` | Same script — **post-pre-shear** fit (200 s⁻¹ × 300 s) | Same fields; thixotropy/rheopexy comparison vs Ramp 1. **Optional** — see below |
+| `Ramp2` | Same script — **post-pre-shear** fit (200 s⁻¹ × 300 s) | Same fields; thixotropy/rheopexy comparison vs Ramp 1. **Optional** |
 
 ### Inks with only one ramp
 
-Not every ink has both a no-pre-shear and a post-pre-shear flow curve. To
-declare an ink that has **only Ramp 1** (or only Ramp 2), simply omit the
-missing field from the struct, or set it to an empty array:
+Omit (or set to `[]`) the missing field. The driver's `has_ramp(ink, ramp)`
+guard skips any `{ink, ramp}` combination that has no data — no per-Vp
+folder, no slicer CSV, no master-summary rows for it. If no ink declares a
+ramp, that `Ramp1/`/`Ramp2/` subtree is never created.
 
-```matlab
-inks(4).name     = 'NewInk_X';
-inks(4).rho      = 980;
-inks(4).Rrec_pct = 70;
-inks(4).Ramp1    = struct('K_PL', ..., 'n_PL', ..., 'eta0', ..., ...);
-% (no Ramp2 line — this ink has no post-pre-shear data)
-```
-
-The driver checks `has_ramp(ink, ramp)` before every per-ink call (legacy
-PL, legacy Cross, and slicer layer). Missing slices are skipped silently:
-
-- the per-sample 4-panel PNGs and `_data.txt` are not produced for that
-  `{ink, ramp}` combination,
-- the ink is omitted from the cross-ink overlay for that ramp,
-- no row is written to `master_summary_v4.csv` for that combination,
-- the slicer CSV layer skips the ink.
-
-If **no** inks declare a particular ramp, that whole `Ramp1/` or `Ramp2/`
-subtree is simply never created. The script will not produce empty
-folders.
-
-### Per-subset cross-ink overlay
-
-After the inner ink loop for each `{ramp, Vp, needle, model}` slice closes,
-the driver emits one overlay PNG:
-
-```
-<Ramp>/Vp_<v>_mmps/PL_<needle>/all_samples_velocity_<orientation>.png
-<Ramp>/Vp_<v>_mmps/Cross_<needle>/all_samples_velocity_<orientation>.png
-```
-
-Each overlay is a 1×2 figure (needle + syringe velocity profiles), one
-coloured curve per ink that had parameters for this slice. This mirrors
-the `create_multi_sample_plots` nested function from
-`run_solver_improved.m` / `run_solver_Cross_v2.m`, with three deliberate
-differences:
-
-- **deterministic filename** (no timestamp suffix) — overwrites on rerun
-  so the folder tree stays clean,
-- **invalid-profile filter** — if the Cross solver returns NaN for an ink
-  at very high Vp (Q above the asymptotic Q_max), that curve is dropped
-  from the overlay instead of aborting the whole figure,
-- **render at `cfg.fig_dpi`** (default 300) — the legacy default of 1200
-  produced ~5–8 MB per overlay; 300 DPI is print-quality at a fraction of
-  the size.
-
-**Geometries** (lines 76–82): `Rs`, `R_n`, `L_n`, `Ls`. Defaults: BD 10 mL
-syringe + 21G/22G blunt needles. Edit if your hardware differs.
-
-**Configuration block** (lines 26–35):
+## Configuration block (lines ~24–49)
 
 | Knob | Default | Purpose |
 |---|---|---|
 | `cfg.output_root` | `'output_v4'` | Where everything is written |
-| `cfg.orientation` | `'downward'` | `horizontal` / `upward` / `downward` (affects hydrostatic term) |
-| `cfg.include_hydrostat` | `true` | Toggle ρgh contribution to ΔP |
-| `cfg.save_legacy_plots` | `true` | Toggle the per-sample 4 PNGs + `_data.txt` (set `false` for fast production runs) |
-| `cfg.save_slicer` | `true` | Toggle the v3-style slicer CSVs + summary PNGs |
+| `cfg.orientation` | `'downward'` | `horizontal` / `upward` / `downward` (sign of the ρgh term) |
+| `cfg.include_hydrostat` | `true` | Toggle the ρgh contribution to ΔP |
+| `cfg.save_data` | `true` | Toggle the per-Vp combined `_data.txt` |
+| `cfg.save_figures` | `true` | Toggle per-Vp + summary PNGs |
+| `cfg.save_csv` | `true` | Toggle the across-Vp slicer CSV |
+| `cfg.num_points` | `200` | Radial discretisation |
 | `cfg.ramps_to_run` | `{'Ramp1','Ramp2'}` | Run one or both ramps |
-| `cfg.legacy_Vp_mode` | `false` | If `true`, uses the old `[3..25] mm/s` grid — that grid is on a mechanically unreachable operating point for the CMC/NE rig and is provided **only** to audit-reproduce pre-2026-05 outputs. New inks with a different printer envelope may legitimately want this range; in that case prefer to set `cfg.Vp_mm_s` directly |
-| `cfg.show_figures` | `false` | When `false` (v4.2 default), every figure created during the run is built headless and saved straight to PNG — no GUI windows pop up. Set `true` only for interactive debugging |
-| `cfg.fig_dpi` | `300` | **Currently parsed but not threaded** into the legacy algorithms (which hard-code 1200 DPI internally). See "Known TODO" below |
+| `cfg.show_figures` | `false` | Headless figure mode (restored on exit via `onCleanup`, even on error / Ctrl-C). Set `true` only for interactive debugging |
+| `cfg.legacy_Vp_mode` | `false` | If `true`, uses the old `[3..25] mm/s` grid — that grid sits on a mechanically unreachable operating point for the CMC/NE rig and is provided **only** to audit-reproduce pre-2026-05 outputs |
 
-## Folder-name convention
+Default `Vp_mm_s` sweep when `legacy_Vp_mode` is `false`:
+`[0.003 0.005 0.007 0.01 0.015 0.02 0.03 0.04]` mm/s, which maps to head
+speeds of ~2–30 mm/s via the `Vp·(Rs/Rn)²` amplification.
 
-Each `Vp` value becomes a folder tag of the form `Vp<value>mmps`, with any
-decimal point in the value replaced by the letter `p`:
-
-| `cfg.Vp_mm_s(k)` | folder tag |
-|---|---|
-| `10` | `Vp10mmps` |
-| `3` | `Vp3mmps` |
-| `0.01` | `Vp0p01mmps` |
-| `0.003` | `Vp0p003mmps` |
-
-**The number in the folder name is the value of `Vp` in mm/s, not a
-truncated form of it.** `Vp0p01mmps` is Vp = 0.01 mm/s, not Vp = 10 mm/s.
-The bench-realistic default sweep (`[0.003 … 0.04] mm/s`) and the legacy
-sweep (`[3 … 25] mm/s`) differ by roughly three orders of magnitude — see
-the project memory `v3_vs_old_simulation_audit` for why.
+**Geometries** (lines ~80–85): `geom_21G`, `geom_22G` carry `Rs`, `R_n`,
+`L_n`, `Ls`, `label`, `h_factor` (layer height as a fraction of needle ID,
+default 0.7). Defaults: BD 10 mL syringe + 21G/22G blunt needles. Edit if your
+hardware differs.
 
 ## How to run
 
@@ -166,67 +111,42 @@ run_solver_v4
 
 ## Runtime estimate
 
-Defaults: 2 ramps × 8 Vps × 3 inks × 2 needles × 2 models = **192 legacy calls**
-+ 12 slicer calls. Cross is the bottleneck (`fzero` over the
+Defaults: 2 ramps × 3 inks × 2 needles = **12 superset calls**, each sweeping
+8 `Vp` values for both PL and Cross. Cross is the bottleneck (`fzero` over the
 Weissenberg–Rabinowitsch integral). Expect ~3–6 minutes on a typical laptop.
 
-Quick smoke-test: set `cfg.ramps_to_run = {'Ramp1'}` and shorten `cfg.Vp_mm_s`
-to e.g. `[0.01]` — this drops the total to ~12 calls (<30 s).
-
-## Differences vs `run_solver_v3.m`
-
-| Aspect | `run_solver_v3.m` | `run_solver_v4.m` |
-|---|---|---|
-| Per-sample radial-profile PNGs + `_data.txt` | ✗ | ✓ |
-| Cross-ink overlay (`all_samples_velocity_*.png`) per subset | ✗ | ✓ (v4.1) |
-| Slicer CSV + summary PNG | ✓ | ✓ |
-| Master summary format | Wide (PL & Cross in one row) | Long (one row per model) |
-| Ramp coverage in one run | Manual edit between runs | Both in one execution |
-| Inks with only one ramp | All-or-nothing per script edit | Per-ink `has_ramp` guard — drop the field, the ink is skipped where it has no data |
-| Cross algorithm called | `bioprinting_algorithm_v3.m` (vectorised) | `bioprinting_algorithm_cross_v2.m` (per-Vp, with full profile outputs) plus `bioprinting_algorithm_v3.m` for the slicer CSV |
-| Figure RAM behaviour | N/A (single PNG) | `close all` per inner iteration to prevent accumulation |
-| Ink naming convention | Underscored aliases (`C15_SF_5_5`) | Canonical names (`C15 Gira 5.5`) — both refer to the same material |
+Quick smoke-test: set `cfg.ramps_to_run = {'Ramp1'}` and shorten
+`cfg.Vp_mm_s` to `[0.01]` — drops the work to ~6 calls (<30 s).
 
 ## Dependencies
 
-MATLAB R2020a+. Calls the existing solver functions unchanged:
+MATLAB R2020a+. Calls a **single** solver:
 
-- `bioprinting_algorithm_3.m` (PL, straight cylinder)
-- `bioprinting_algorithm_cross_v2.m` (Cross, called with `Rn_in = Rn_out`)
-- `bioprinting_algorithm_v3.m` (PL + Cross slicer layer)
+- [`bioprinting_algorithm_v4.m`](bioprinting_algorithm_v4.md) — the unified
+  superset solver (Power-Law + Cross + radial profiles + slicer layer).
 
-All four must be on the path.
+Both must be on the path (handled automatically by the `addpath` at the top
+of the driver). The deprecated solvers under `archive/scripts/` are **not**
+needed to run `run_solver_v4` — they are retained only so `validate_v4.m` can
+cross-check v4 against the legacy physics.
 
 ## Caveats
 
-- Same flow assumptions as the underlying algorithms: fully developed laminar
+- Same flow assumptions as the underlying solver: fully developed laminar
   flow, no entrance/exit losses, no wall slip, no yield stress in the solver
   (yield handled separately by `extract_hmax_v3.py`).
-- The `cfg.fig_dpi` knob is currently **not** threaded into the legacy
-  algorithms — they call `exportgraphics(..., 'Resolution', 1200)` internally,
-  which produces large PNGs (~5–8 MB each). Promoting `cfg.fig_dpi` to actually
-  control output resolution requires adding a `Resolution` name-value to
-  `bioprinting_algorithm_3.m` and `bioprinting_algorithm_cross_v2.m`. Left as
-  an explicit follow-up to avoid touching algorithms that have audited output
-  history.
+- Geometry is **straight cylindrical needle only**. For a conical tip use
+  [`bioprinting_algorithm_conical.m`](bioprinting_algorithm_conical.md)
+  directly — it is outside v4's scope.
 - `cfg.legacy_Vp_mode = true` reproduces the pre-2026-05 Vp grid for audit
-  only. Do **not** report results at those Vps as if they were achievable on
-  the current rig — they are not. See `kflow_inversion_convention.md` and
-  related project memories.
+  only. Do **not** report results at those Vps as if achievable on the current
+  rig.
 
-## When to promote to `active`
+## Verifying the solver (optional)
 
-Promote `run_solver_v4.m` (and demote `run_solver_v3.m` to `deprecated`) once
-all of the following are true:
-
-1. A smoke-test run with `cfg.ramps_to_run = {'Ramp1'}` and the v3 default Vp
-   grid produces `slicer_lookup_*` CSVs and `plots_*` PNGs that are
-   **numerically identical** to the `output_v3/` ones, modulo file-naming.
-2. The legacy 4-panel PNGs for at least one (ink, needle, Vp) match the
-   per-sample outputs from a stand-alone `run_solver_improved.m` run at the
-   same Vp.
-3. The `master_summary_v4.csv` opens cleanly in pandas/Excel and pivots over
-   `(ink, needle, Vp, model)` without column-name collisions.
-
-Update `SCRIPT_REGISTRY.md` and the manuals index in
-`docs/manuals/README.md` when promoting.
+`validate_v4.m` re-runs the C15 / 21G case through `bioprinting_algorithm_v4`
+and the two legacy solvers (`bioprinting_algorithm_3`,
+`bioprinting_algorithm_cross_v2` in `archive/scripts/`) and prints a
+field-by-field relative-error report. PL matches the legacy solver exactly;
+Cross matches within solver tolerance. See
+[`validate_v4.md`](validate_v4.md).

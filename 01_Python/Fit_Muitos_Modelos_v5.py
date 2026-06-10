@@ -32,7 +32,7 @@ USAGE
 2. Run from the project root:
        python Export/01_Python/Fit_Muitos_Modelos_v5.py
 3. Inspect the .txt report. Best-AIC rows feed directly into the MATLAB
-   ``samples(...)`` struct in ``02_MATLAB/run_solver_v3.m``.
+   ``inks(...)`` struct in ``02_MATLAB/run_solver_v4.m``.
 
 Author: T.M.C. Rodrigues - 2026-05-20
 """

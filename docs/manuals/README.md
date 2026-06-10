@@ -24,19 +24,25 @@ first time on a new ink.**
 
 | Script | Purpose | Manual |
 |---|---|---|
-| `run_solver_v4.m` | **Draft** (2026-05-21) — one-shot master: legacy radial profiles + v3 slicer CSVs + long-format master summary in one run | [run_solver_v4.md](run_solver_v4.md) |
-| `run_solver_v3.m` | **Current primary** — PL + Cross, straight cylinder, slicer CSVs | [run_solver_v3.md](run_solver_v3.md) |
-| `run_solver_improved.m` | Legacy PL-only driver, radial profiles | [run_solver_improved.md](run_solver_improved.md) |
-| `run_solver_Cross_v2.m` | Cross-only driver, tapered nozzle | [run_solver_Cross_v2.md](run_solver_Cross_v2.md) |
+| `run_solver_v4.m` | **Current — sole driver.** One `bioprinting_algorithm_v4` call per `(ramp × ink × needle)`: radial profiles + slicer CSVs + across-Vp summary + long-format master summary in one run | [run_solver_v4.md](run_solver_v4.md) |
 
 ## MATLAB — solver functions (called by drivers, not run directly)
 
 | Function | Geometry | Model | Manual |
 |---|---|---|---|
-| `bioprinting_algorithm_v3.m` | straight cylinder | PL + Cross | [bioprinting_algorithm_v3.md](bioprinting_algorithm_v3.md) |
-| `bioprinting_algorithm_3.m` | straight cylinder | PL only | [bioprinting_algorithm_3.md](bioprinting_algorithm_3.md) |
-| `bioprinting_algorithm_cross_v2.m` | tapered nozzle | Cross | [bioprinting_algorithm_cross_v2.md](bioprinting_algorithm_cross_v2.md) |
+| `bioprinting_algorithm_v4.m` | straight cylinder | **PL + Cross (superset)** | [bioprinting_algorithm_v4.md](bioprinting_algorithm_v4.md) |
 | `bioprinting_algorithm_conical.m` | conical tip | PL | [bioprinting_algorithm_conical.md](bioprinting_algorithm_conical.md) |
+
+## MATLAB — regression check (optional, maintainers)
+
+| Script | Purpose | Manual |
+|---|---|---|
+| `validate_v4.m` | Cross-checks `bioprinting_algorithm_v4` against the legacy PL/Cross solvers (in `02_MATLAB/archive/scripts/`) + v3 slicer formulas | [validate_v4.md](validate_v4.md) |
+
+> The deprecated solvers `bioprinting_algorithm_3.m` (PL) and
+> `bioprinting_algorithm_cross_v2.m` (Cross) live in `02_MATLAB/archive/scripts/`
+> and exist **only** as the ground truth for `validate_v4.m`. Their physics is
+> fully folded into `bioprinting_algorithm_v4.m`; do not call them for new work.
 
 ## Standalone module
 

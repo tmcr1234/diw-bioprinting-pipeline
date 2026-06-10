@@ -85,7 +85,7 @@ published manuscript and is frozen).
 - No entrance/exit losses
 - No wall slip
 - No yield stress (PL & Cross solvers — yield handled separately by
-  `extract_hmax_v2.py`)
+  `extract_hmax_v3.py`)
 
 If any assumption is materially violated for your ink, flag it in the
 manuscript.
@@ -100,9 +100,16 @@ your hardware differs):
 | Needle 22G (blunt) | 0.413 | 25.4 |
 
 **Parameter sync (the rule that breaks pipelines):** every time Python re-fits
-a model, **update the corresponding fields in `samples(...)` at the top of
-`02_MATLAB/run_solver_v3.m` on the same day**. Stale MATLAB parameters give
-silently wrong slicer CSVs.
+a model, **update the corresponding fields in the `inks(...)` struct at the top
+of `02_MATLAB/run_solver_v4.m` on the same day** (each ink carries `Ramp1` /
+`Ramp2` sub-structs of `K_PL, n_PL, eta0, etaInf, lambda, m_Cross`). Stale
+MATLAB parameters give silently wrong slicer CSVs.
+
+**One solver, one driver:** the MATLAB layer is `bioprinting_algorithm_v4.m`
+(unified PL + Cross superset, straight needle) driven by `run_solver_v4.m`.
+Use `bioprinting_algorithm_conical.m` only for conical tips. The deprecated
+solvers under `archive/scripts/` exist only for the `validate_v4.m` regression
+check — never call them for new work.
 
 **Slicer convention:** `k_flow` is **deposition efficiency**, not a slicer
 input. The slicer's **Extrusion Multiplier = 1 / k_flow**.

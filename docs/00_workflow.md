@@ -26,9 +26,9 @@ sequential, never reordered, never skipped.**
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  [3] EXTRUSION SIMULATION (MATLAB)                                │
-│      Paste Python params into samples(…) struct, then run         │
-│      run_solver_v3.m  →  ΔP, γ̇_w, v_print, w_line, k_flow,         │
-│                          per (ink × needle × Vp)                  │
+│      Paste Python params into the inks(…) struct, then run        │
+│      run_solver_v4.m  →  ΔP, γ̇_w, v_print, w_line, k_flow,         │
+│                          per (ramp × ink × needle × Vp)           │
 └──────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -45,17 +45,22 @@ sequential, never reordered, never skipped.**
 
 Stage 2 → Stage 3 is the one parameter sync that breaks pipelines if it falls
 out of date. **Whenever you re-fit in Python, update the MATLAB
-`samples(...)` struct on the same day.**
+`inks(...)` struct on the same day.**
 
-| Python output | MATLAB field (in `run_solver_v3.m`) |
+In `run_solver_v4.m` each ink carries `Ramp1` (no pre-shear) and optional
+`Ramp2` (post pre-shear) sub-structs. Fields below live on the relevant ramp
+sub-struct, except `rho` / `Rrec_pct` which are per-ink.
+
+| Python output | MATLAB field (in `run_solver_v4.m`) |
 |---|---|
-| `Fit_Muitos_Modelos_v5` → Power-Law `K` | `samples(i).K_PL` |
-| `Fit_Muitos_Modelos_v5` → Power-Law `n` | `samples(i).n_PL` |
-| `Fit_Muitos_Modelos_v5` → Cross `eta0` | `samples(i).eta0` |
-| `Fit_Muitos_Modelos_v5` → Cross `etaInf` | `samples(i).etaInf` |
-| `Fit_Muitos_Modelos_v5` → Cross `lambda` | `samples(i).lambda` |
-| `Fit_Muitos_Modelos_v5` → Cross `m` | `samples(i).m_Cross` |
-| `extract_recovery_v2` → Rec_G' or Rec_\|η*\| % (pick one) | `samples(i).Rrec_pct` |
+| `Fit_Muitos_Modelos_v5` → Power-Law `K` | `inks(i).Ramp1.K_PL` |
+| `Fit_Muitos_Modelos_v5` → Power-Law `n` | `inks(i).Ramp1.n_PL` |
+| `Fit_Muitos_Modelos_v5` → Cross `eta0` | `inks(i).Ramp1.eta0` |
+| `Fit_Muitos_Modelos_v5` → Cross `etaInf` | `inks(i).Ramp1.etaInf` |
+| `Fit_Muitos_Modelos_v5` → Cross `lambda` | `inks(i).Ramp1.lambda` |
+| `Fit_Muitos_Modelos_v5` → Cross `m` | `inks(i).Ramp1.m_Cross` |
+| `extract_recovery_v2` → Rec_G' or Rec_\|η*\| % (pick one) | `inks(i).Rrec_pct` |
+| Pre-sheared (`Visco_Artur`) re-fit of the same fields | `inks(i).Ramp2.*` |
 
 ## Common mistakes (the ones a new student will make)
 

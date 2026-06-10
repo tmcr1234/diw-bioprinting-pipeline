@@ -71,26 +71,32 @@ cd "<YOUR PROJECT ROOT>"      # not Export/, the folder above it
 # Stage 2 — fit the flow curve (Anton Paar CSV)
 python Export/01_Python/Fit_Muitos_Modelos_v5.py
 
-# Stage 2 — recovery % (still on legacy .xls — migration pending)
-python Export/01_Python/Recovery_v1.py
+# Stage 2 — SAOS sweeps (Anton Paar CSV)
+python Export/01_Python/extract_SAOS_amplitude_v2.py
+python Export/01_Python/extract_SAOS_frequency_v2.py
 
-# Stage 2 — h_max prediction (still on legacy .xls — migration pending)
-python Export/01_Python/extract_hmax_v2.py
+# Stage 2 — 3iTT recovery % (Anton Paar CSV)
+python Export/01_Python/extract_recovery_v2.py
+
+# Stage 2 — h_max prediction (reads the two SAOS CSVs above)
+python Export/01_Python/extract_hmax_v3.py
 ```
 
 Open `Analises/Python/Results/FitAll-AntPar-v5.txt`. Find the row with the
 best AIC for the Power-Law and Cross models. Copy the numbers into the
-`samples(...)` struct at the top of `Export/02_MATLAB/run_solver_v3.m`.
+`inks(...)` struct at the top of `Export/02_MATLAB/run_solver_v4.m` (each ink
+has `Ramp1` / `Ramp2` sub-structs of `K_PL, n_PL, eta0, etaInf, lambda,
+m_Cross`).
 
 ```matlab
 % In MATLAB:
 cd '<YOUR PROJECT ROOT>'
 addpath('Export/02_MATLAB')
-run_solver_v3
+run_solver_v4
 ```
 
-This produces `output_v3/slicer_lookup_<sample>_<needle>.csv` — the table you
-hand to whoever runs the printer.
+This produces `output_v4/<Ramp>/slicer_lookup_<ink>_<needle>.csv` — the table
+you hand to whoever runs the printer.
 
 ### 4. Print
 
@@ -116,11 +122,11 @@ Full details and a parameter hand-off table: **`docs/00_workflow.md`**.
 | What you need to do | File to open |
 |---|---|
 | Understand the four stages | `docs/00_workflow.md` |
-| Verify your `.xls` files are compatible | `docs/01_rheology_data_format_UNDER_REVIEW.md` |
+| Verify your data files are compatible | `docs/01_rheology_data_formats.md` |
 | Learn a specific script (inputs, outputs, caveats) | `docs/manuals/<script>.md` |
 | See which version of each script is current | `SCRIPT_REGISTRY.md` |
 | Read the bench-side printing SOP | `03_SOPs/Printing_Parameters_SOP_v4_EN.pdf` |
-| Read the long-form printing-parameters textbook | `03_SOPs/Printing_Parameters_Textbook_v2.tex` (+ PDF) |
+| Read the long-form printing-parameters textbook | `03_SOPs/Printing_Parameters_Textbook_v3.tex` (+ student & instructor PDFs) |
 | Run image-based scaffold quality analysis | `04_Printability/Printability/README.md` |
 | Brief an AI assistant about this codebase | `CLAUDE.md` |
 
@@ -130,9 +136,9 @@ Full details and a parameter hand-off table: **`docs/00_workflow.md`**.
 
 - **Geometry defaults** are BD 10 mL syringe + 21G/22G blunt needles. If you
   print with different hardware, edit `geom_21G` / `geom_22G` in
-  `02_MATLAB/run_solver_v3.m`.
+  `02_MATLAB/run_solver_v4.m`.
 - **No yield stress** in the extrusion solvers. Yield is handled separately via
-  the `h_max` calculation in `01_Python/extract_hmax_v2.py`.
+  the `h_max` calculation in `01_Python/extract_hmax_v3.py`.
 - **No wall slip, no viscoelasticity, no thixotropy** in the steady-state
   solvers. For pre-shear effects, fit the `Visco_Artur` (pre-sheared) data
   branch separately and compare K, n values.

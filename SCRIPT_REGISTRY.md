@@ -64,24 +64,41 @@ kept around for pre-migration archive reproducibility.
 
 ## MATLAB — `02_MATLAB/`
 
+As of the 2026-06-01 rewrite, the MATLAB layer is a **single active solver
+plus its driver**. `bioprinting_algorithm_v4.m` is a verified superset of the
+three earlier solvers; `run_solver_v4.m` is the sole driver.
+
 | Script | Version | Status | Notes / Output location |
 |---|---|---|---|
-| `run_solver_v4.m` | v4 | `draft` (2026-05-21) | **One-shot master driver** — joins legacy per-sample radial profiles (PL + Cross) with v3 slicer lookup and a long-format master summary. Output: `output_v4/`. Smoke-test pending; will supersede `run_solver_v3.m` once validated. See [`run_solver_v4.md`](docs/manuals/run_solver_v4.md) |
-| `run_solver_v3.m` | v3 | `active` | **Current primary driver.** `output_v3/slicer_lookup_*.csv`, `output_v3/master_summary_v3.csv` |
-| `bioprinting_algorithm_v3.m` | v3 | `active` | Called by `run_solver_v3.m` and (for the slicer layer) by `run_solver_v4.m` |
-| `run_solver_improved.m` | — | `active` | Legacy PL-only driver, radial profiles |
-| `bioprinting_algorithm_3.m` | — | `active` | Called by `run_solver_improved.m` and (for the per-sample PL layer) by `run_solver_v4.m` |
-| `run_solver_Cross_v2.m` | v2 | `active` | Cross-only driver, tapered nozzle |
-| `bioprinting_algorithm_cross_v2.m` | v2 | `active` | Called by `run_solver_Cross_v2.m` and (for the per-sample Cross layer, degenerate to straight cylinder) by `run_solver_v4.m` |
-| `bioprinting_algorithm_conical.m` | — | `active` | Conical-tip PL solver — only needed for conical nozzles |
+| `run_solver_v4.m` | v4 | `active` | **Sole driver.** One `bioprinting_algorithm_v4` call per `(ramp × ink × needle)`: combined `_data.txt`, per-Vp + summary PNGs, slicer CSVs, long-format `master_summary_v4.csv`. Output: `output_v4/`. See [`run_solver_v4.md`](docs/manuals/run_solver_v4.md) |
+| `bioprinting_algorithm_v4.m` | v4 | `active` | **Unified superset solver (straight needle).** Per Vp, both PL + Cross: full syringe+needle physics (pressure decomposition, hydrostatic, Reynolds/flow-regime, radial profiles) + slicer layer (`v_print`, `w_line`, `k_flow`). Validated against the legacy solvers via `validate_v4.m`. See [`bioprinting_algorithm_v4.md`](docs/manuals/bioprinting_algorithm_v4.md) |
+| `bioprinting_algorithm_conical.m` | — | `active` | Conical-tip PL solver — only needed for conical nozzles; outside v4's straight-needle scope |
+| `validate_v4.m` | — | `active` | Regression check: cross-validates `bioprinting_algorithm_v4` against the legacy PL/Cross solvers (in `archive/scripts/`) + v3 slicer formulas. Maintainer tool, not part of the student workflow. See [`validate_v4.md`](docs/manuals/validate_v4.md) |
 
-### Deprecated / audited MATLAB (NOT shipped)
+### Retained-for-audit MATLAB — `02_MATLAB/archive/scripts/`
 
-| Script | Status | Why |
+Two deprecated solvers are kept **only** because `validate_v4.m` cross-checks
+against them. Their physics is fully folded into `bioprinting_algorithm_v4.m`.
+**Do not call them for new work.**
+
+| Script | Version | Status | Why retained |
+|---|---|---|---|
+| `bioprinting_algorithm_3.m` | — | `deprecated` | Legacy Power-Law solver — ground truth for the PL half of `validate_v4` |
+| `bioprinting_algorithm_cross_v2.m` | v2 | `deprecated` | Legacy Cross solver — ground truth for the Cross half of `validate_v4` |
+
+### Removed from this export (2026-06-01)
+
+These were shipped in the 2026-05-21 release but are superseded by the v4
+superset and no longer carried. They remain in the maintainer's project tree
+(`Analises/MatLab/archive/scripts/`) for the paper trail.
+
+| Script | Status | Superseded by |
 |---|---|---|
-| `bioprinting_algorithm.m` | `deprecated` | Pre-v3 fixed-Vp Power-Law solver |
-| `bioprinting_algorithm_2.m` | `deprecated` | Intermediate revision |
-| `bioprinting_algorithm_cross.m` | `deprecated` | Replaced by `_v2` (better convergence brackets) |
+| `run_solver_v3.m` | `deprecated` | `run_solver_v4.m` |
+| `run_solver_improved.m` | `deprecated` | `run_solver_v4.m` |
+| `run_solver_Cross_v2.m` | `deprecated` | `run_solver_v4.m` |
+| `bioprinting_algorithm_v3.m` | `deprecated` | `bioprinting_algorithm_v4.m` (slicer layer) |
+| `bioprinting_algorithm.m`, `bioprinting_algorithm_2.m`, `bioprinting_algorithm_cross.m` | `deprecated` | Pre-v3 solvers; never shipped |
 
 ---
 

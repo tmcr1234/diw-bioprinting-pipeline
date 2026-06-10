@@ -83,6 +83,7 @@ If the new equipment exports `.xlsx` instead of `.xls`, the fix is two lines:
 ## Hand-off to MATLAB
 
 After running, copy the K, n (Power Law) and eta0, etaInf, lambda, m (Cross)
-values from the `.txt` report into the `samples(...)` struct at the top of
-`02_MATLAB/run_solver_v3.m`. Keep these two in sync at all times — the MATLAB
-simulation results are only as good as the Python fit they ingest.
+values from the `.txt` report into the `inks(...)` struct at the top of
+`02_MATLAB/run_solver_v4.m` (the `Ramp1` / `Ramp2` sub-struct). Keep these two
+in sync at all times — the MATLAB simulation results are only as good as the
+Python fit they ingest.
