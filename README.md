@@ -82,6 +82,13 @@ python Export/01_Python/extract_recovery_v2.py
 python Export/01_Python/extract_hmax_v3.py
 ```
 
+> **Optional — G″ / gel-point analyses (legacy `.xls` only).**
+> `extract_Gpp_coxmerz_v1.py` adds tan δ / Winter–Chambon gel-point, Cox–Merz,
+> and G″-overshoot analyses (Figs F8–F10). It still reads TA-style `.xls`
+> through the legacy parser and has **hard-coded paths** — edit its header dicts
+> and `PROJECT_ROOT` before running, and see
+> [`docs/manuals/extract_Gpp_coxmerz_v1.md`](docs/manuals/extract_Gpp_coxmerz_v1.md).
+
 Open `Analises/Python/Results/FitAll-AntPar-v5.txt`. Find the row with the
 best AIC for the Power-Law and Cross models. Copy the numbers into the
 `inks(...)` struct at the top of `Export/02_MATLAB/run_solver_v4.m` (each ink

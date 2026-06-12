@@ -16,8 +16,9 @@ first time on a new ink.**
 | **`extract_hmax_v3.py`** | the two v2 SAOS CSVs | **Current** — h_max + N_max under 4 yield criteria (no xlrd) | [extract_hmax_v3.md](extract_hmax_v3.md) |
 | `Fit_Muitos_Modelos_v4.py` | TA-style `.xls` | Legacy — for the pre-migration archive | [Fit_Muitos_Modelos_v4.md](Fit_Muitos_Modelos_v4.md) |
 | `Recovery_v1.py` | TA-style `.xls` | Legacy steady-shear-ramp recovery — superseded by 3iTT-based extract_recovery_v2 | [Recovery_v1.md](Recovery_v1.md) |
-| `extract_SAOS_values.py` | TA-style `.xls` | Legacy: fully superseded by the two v2 scripts; archive reference only | [extract_SAOS_values.md](extract_SAOS_values.md) |
+| `extract_SAOS_values.py` | TA-style `.xls` | Legacy SAOS extractor (superseded by the two v2 scripts) — still imported by `extract_Gpp_coxmerz_v1.py` for its `.xls` parser | [extract_SAOS_values.md](extract_SAOS_values.md) |
 | `extract_hmax_v2.py` | inherits | Legacy — superseded by extract_hmax_v3 | [extract_hmax_v2.md](extract_hmax_v2.md) |
+| **`extract_Gpp_coxmerz_v1.py`** | TA-style `.xls` | **New** — G″ analyses: tan δ / Winter–Chambon gel point, Cox–Merz, G″ overshoot (Figs F8–F10). Not yet ported to Anton Paar CSV | [extract_Gpp_coxmerz_v1.md](extract_Gpp_coxmerz_v1.md) |
 | `Calculo da Pressao de Extrusao.py` | TA-style `.xls` | Quick Hagen–Poiseuille pressure estimate | [Calculo_da_Pressao_de_Extrusao.md](Calculo_da_Pressao_de_Extrusao.md) |
 
 ## MATLAB — drivers (run these)

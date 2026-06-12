@@ -28,7 +28,8 @@ If a script's status is unclear, **ask the maintainer before running it**.
 | `extract_hmax_v3.py` | v3 | `active` (current) | the two v2 SAOS CSVs (no xlrd) | `./Analises/Python/Results/{SAOS_hmax_v3.txt, printing_parameters_per_ink_v3.csv, Gprime_extrap_*_v3.png}` |
 | `Fit_Muitos_Modelos_v4.py` | v4 | `active` (legacy) | TA-style `.xls` (xlrd) | Use only on the pre-migration archive |
 | `Recovery_v1.py` | v1 | `active` (legacy) | TA-style `.xls` (xlrd) | **SUPERSEDED** by extract_recovery_v2 — old steady-shear protocol; v2 uses the 3iTT-Osc-Rot-Osc protocol with different math |
-| `extract_SAOS_values.py` | — | `active` (legacy) | TA-style `.xls` (xlrd) | **FULLY SUPERSEDED** by extract_SAOS_amplitude_v2 + extract_SAOS_frequency_v2. No longer imported by anything — keep only for archival reference |
+| `extract_SAOS_values.py` | — | `active` (legacy) | TA-style `.xls` (xlrd) | **SUPERSEDED for SAOS extraction** by extract_SAOS_amplitude_v2 + extract_SAOS_frequency_v2. Still imported by `extract_Gpp_coxmerz_v1.py` for its `.xls` parser (`read_antpar_xls`, `find_col`, `extract_amplitude_sweep`) — keep |
+| `extract_Gpp_coxmerz_v1.py` | v1 | `active` (new) | TA-style `.xls` (xlrd), via extract_SAOS_values | **G″ / loss-modulus analyses** the G′-only pipeline omitted: tan δ(ω) + Winter–Chambon gel-point test, Cox–Merz (η vs \|η*\|), G″ weak-strain-overshoot. Hard-coded paths in header dicts — **edit before reuse**. Outputs `Results/SAOS_Gpp_coxmerz_v1.txt`, `tandelta_coxmerz_per_ink.csv`, figs `F8_tandelta`/`F9_coxmerz`/`F10_Gpp_overshoot` (.pdf+.png) |
 | `extract_hmax_v2.py` | v2 | `active` (legacy) | inherits from extract_SAOS_values | **SUPERSEDED** by extract_hmax_v3. Keep until v3 has been used end-to-end on a published dataset, then move to deprecated |
 | `Calculo da Pressao de Extrusao.py` | — | `active` (UNDER_REVIEW) | TA-style `.xls` (xlrd) | Custom path set inside the script; **edit before first use** |
 
@@ -38,12 +39,15 @@ If a script's status is unclear, **ask the maintainer before running it**.
 - [x] Amplitude sweep (SAOS) → done 2026-05-20 in `extract_SAOS_amplitude_v2` (`antpar_io.read_amplitude_sweep_csv`)
 - [x] Frequency sweep (SAOS) → done 2026-05-20 in `extract_SAOS_frequency_v2` (`antpar_io.read_frequency_sweep_csv`)
 - [x] Recovery test → done 2026-05-20 in `extract_recovery_v2` (`antpar_io.read_recovery_set` — 3iTT-Osc-Rot-Osc protocol; computes both modulus G' and complex viscosity |η*| recovery ratios)
-- [x] `extract_hmax_v2.py` → done 2026-05-20 in `extract_hmax_v3.py`. Reads the v2 SAOS CSVs directly (single source of truth — no re-parsing, no re-fitting). Matplotlib lazy-loaded so plots are optional. **The migration is complete.**
+- [x] `extract_hmax_v2.py` → done 2026-05-20 in `extract_hmax_v3.py`. Reads the v2 SAOS CSVs directly (single source of truth — no re-parsing, no re-fitting). Matplotlib lazy-loaded so plots are optional. **The five core test types are migrated.**
+- [ ] `extract_Gpp_coxmerz_v1.py` (G″ / tan δ / Cox–Merz / gel-point, added 2026-06-11) → **not yet ported.** Still imports the legacy `.xls` parser from `extract_SAOS_values.py`. To port: swap its `read_antpar_xls`/`extract_amplitude_sweep` calls for the equivalents in `antpar_io.py` + `extract_SAOS_amplitude_v2.py`/`extract_SAOS_frequency_v2.py`, and feed it the flow curve from the v5 Anton Paar reader for the Cox–Merz comparison.
 
-**The entire active pipeline is now `xlrd`-free.** The only scripts that
-still touch `.xls` are the explicitly legacy ones (Fit_v4, Recovery_v1,
-extract_SAOS_values, extract_hmax_v2, Calculo da Pressao de Extrusao),
-kept around for pre-migration archive reproducibility.
+**The core migrated pipeline (Stages 1–4) is `xlrd`-free.** The scripts that
+still touch `.xls` are the legacy ingestion ones kept for pre-migration archive
+reproducibility (Fit_v4, Recovery_v1, extract_SAOS_values, extract_hmax_v2,
+Calculo da Pressao de Extrusao) **plus** `extract_Gpp_coxmerz_v1.py` — a newer
+G″ analysis that still reads `.xls` via the legacy parser and has not been
+ported to the Anton Paar CSV reader yet (see roadmap below).
 
 ### Deprecated / audited Python (NOT shipped in this export)
 
