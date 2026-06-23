@@ -49,33 +49,28 @@ else
     cfg.Vp_mm_s = [0.003 0.005 0.007 0.01 0.015 0.02 0.03 0.04];
 end
 
-%% ================== SAMPLE DATABASE ==================
-% Ramp 1 = no pre-shear (FitAll-Ramp1-v4.txt)
-% Ramp 2 = post pre-shear at 200 1/s for 300 s (FitAll-Ramp2-v4.txt)
-% Names follow CLAUDE.md Section 6.2. Omit (or set []) a ramp the ink lacks.
-
-% Rrec_pct = structural recovery measured at the deposition wall shear rate.
-% At the nominal printing point (Vp=0.01 mm/s, 21G) the true (Rabinowitsch)
-% needle wall shear rate is ~165-218 s^-1, i.e. ~200 s^-1; Rrec is therefore
-% taken from the 3-step recovery test at the nearest disruption rate, 200 s^-1
-% (Relatorio_Recovery.txt): C15 40.36 %, composite 36.20 %, Bozano 95.65 %.
-inks(1).name     = 'C15';
-inks(1).rho      = 898;
-inks(1).Rrec_pct = 40.36;
-inks(1).Ramp1    = struct('K_PL',92.5224,'n_PL',0.397475,'eta0',578.26,'etaInf',0.0162966,'lambda',3.71132,'m_Cross',0.810869);
-inks(1).Ramp2    = struct('K_PL',39.4123,'n_PL',0.387113,'eta0',254.259,'etaInf',0.001,'lambda',3.91943,'m_Cross',0.81443);
-
-inks(2).name     = 'C15 Gira 5.5';
-inks(2).rho      = 898;
-inks(2).Rrec_pct = 36.20;
-inks(2).Ramp1    = struct('K_PL',267.102,'n_PL',0.24029,'eta0',2439.5,'etaInf',0.001,'lambda',4.09905,'m_Cross',0.987578);
-inks(2).Ramp2    = struct('K_PL',92.5405,'n_PL',0.30149,'eta0',951.474,'etaInf',0.001,'lambda',7.96028,'m_Cross',0.854576);
-
-inks(3).name     = 'Bozzano''s Hair Gel';
-inks(3).rho      = 885;
-inks(3).Rrec_pct = 95.65;
-inks(3).Ramp1    = struct('K_PL',144.322,'n_PL',0.234029,'eta0',6354.55,'etaInf',0.932091,'lambda',73.0454,'m_Cross',0.865734);
-inks(3).Ramp2    = struct('K_PL',141.494,'n_PL',0.225653,'eta0',57503.1,'etaInf',0.816576,'lambda',1544.3,'m_Cross',0.825573);
+%% ================== SAMPLE DATABASE (project-local) ==================
+% The fitted ink parameters live OUTSIDE this shared file so Export/ can be a
+% single shared clone symlinked across projects (see Export/CLAUDE.md ->
+% "Shared Export / inks_local.m"). Each project supplies its own inks_local.m
+% in its PROJECT ROOT (the cwd when you run this). Start from the template:
+% Export/02_MATLAB/inks_local.template.m
+%
+% Contract for inks_local():
+%   inks(i).name     char
+%   inks(i).rho      kg/m^3
+%   inks(i).Rrec_pct structural recovery at the deposition wall shear rate
+%                    (~200 s^-1 at the nominal Vp=0.01 mm/s, 21G point;
+%                     read from the project's Relatorio_Recovery.txt)
+%   inks(i).Ramp1    struct(K_PL,n_PL,eta0,etaInf,lambda,m_Cross)  no pre-shear
+%   inks(i).Ramp2    struct(...)  post pre-shear 200 1/s x 300 s; [] if absent
+if exist(fullfile(pwd,'inks_local.m'),'file') ~= 2
+    error('run_solver_v4:noInks', ...
+        ['inks_local.m not found in the current folder:\n  %s\n' ...
+         'cd to your PROJECT ROOT (the folder containing Export/) and create\n' ...
+         'inks_local.m there. Copy Export/02_MATLAB/inks_local.template.m as a start.'], pwd);
+end
+inks = inks_local();
 
 %% ================== GEOMETRIES ==================
 Rs  = 14.3e-3 / 2;

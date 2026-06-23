@@ -91,9 +91,12 @@ python Export/01_Python/extract_hmax_v3.py
 
 Open `Analises/Python/Results/FitAll-AntPar-v5.txt`. Find the row with the
 best AIC for the Power-Law and Cross models. Copy the numbers into the
-`inks(...)` struct at the top of `Export/02_MATLAB/run_solver_v4.m` (each ink
+`inks(...)` struct in **`inks_local.m` in your project root** (the cwd, the
+folder above `Export/`) — *not* inside the shared `run_solver_v4.m`. Each ink
 has `Ramp1` / `Ramp2` sub-structs of `K_PL, n_PL, eta0, etaInf, lambda,
-m_Cross`).
+m_Cross`. Start from `Export/02_MATLAB/inks_local.template.m`; `run_solver_v4`
+loads `inks_local()` from the cwd automatically. Keeping parameters out of the
+shared file lets `Export/` be one clone symlinked across projects.
 
 ```matlab
 % In MATLAB:

@@ -100,10 +100,19 @@ your hardware differs):
 | Needle 22G (blunt) | 0.413 | 25.4 |
 
 **Parameter sync (the rule that breaks pipelines):** every time Python re-fits
-a model, **update the corresponding fields in the `inks(...)` struct at the top
-of `02_MATLAB/run_solver_v4.m` on the same day** (each ink carries `Ramp1` /
-`Ramp2` sub-structs of `K_PL, n_PL, eta0, etaInf, lambda, m_Cross`). Stale
+a model, **update the corresponding fields in the `inks(...)` struct in
+`inks_local.m` in your project root on the same day** (each ink carries `Ramp1`
+/ `Ramp2` sub-structs of `K_PL, n_PL, eta0, etaInf, lambda, m_Cross`). Stale
 MATLAB parameters give silently wrong slicer CSVs.
+
+**Shared Export / `inks_local.m` (project-local parameters):** `Export/` is a
+single shared clone, symlinked into each project, so the fitted parameters live
+**outside** it. `run_solver_v4` calls `inks_local()` from the current folder
+(your project root); each project keeps its own `inks_local.m` there. Copy
+`02_MATLAB/inks_local.template.m` to start. Do **not** hard-code parameters back
+into the shared `run_solver_v4.m`. (Geometry `geom_21G`/`geom_22G` remains in
+`run_solver_v4.m` — it is a shared hardware default; override per project only
+if your hardware differs.)
 
 **One solver, one driver:** the MATLAB layer is `bioprinting_algorithm_v4.m`
 (unified PL + Cross superset, straight needle) driven by `run_solver_v4.m`.
