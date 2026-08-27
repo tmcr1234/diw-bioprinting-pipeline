@@ -406,6 +406,21 @@ def baseline_correct(series, method: str = "min"):
     run; corrected = series - floor. The run's quietest point is taken as
     the zero.
 
+    KNOWN, QUANTIFIED BIAS OF THE MIN CONVENTION. It assumes the quietest
+    point has zero TRUE normal stress. On a shear ramp the quietest point is
+    the lowest shear rate, where the material usually already has a small but
+    non-zero N1, so the tare over-subtracts by exactly N1(gamma_dot_min) and
+    every corrected value is low by that amount. Verified on a synthetic
+    power-law curve: true N1 at 200 1/s = 1590.75 Pa, recovered = 1564.55 Pa,
+    short by 26.17 Pa = N1(0.1 1/s) exactly, a 1.6% under-estimate.
+
+    The bias is always DOWNWARD, so it makes the resulting Tanner die-swell
+    estimate conservative rather than optimistic — which is the safe
+    direction, but it is not zero. It shrinks as the flow curve starts at a
+    lower shear rate. Start the ramp as low as the torque resolution allows,
+    and if you need N1 to better than a few percent, measure a genuine
+    zero-shear baseline instead of inferring one.
+
     ``"median_low25"`` — REJECTED, KEPT ONLY SO IT IS NOT RETRIED. Taking
     the median of the 25 lowest points was tried first and gives a
     materially wrong answer: on the C20 run it returned ~460 Pa where the

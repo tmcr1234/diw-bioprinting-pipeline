@@ -211,6 +211,28 @@ disclose it:
 | die swell `beta` | `0.30*(1-n)` — no source; makes swell GROW as the ink gets more shear-thinning, which is backwards, and over-predicts the one measured case by ~2.5x | Tanner (1970) closure from measured `N1`; `N1 -> 0` gives the 0.13 inelastic floor (Nickell 1974) | `w_line`, `v_print`, `k_flow` → **the Extrusion Multiplier used at the bench**. Moving `beta` 0.228 → 0.107 on C15-SF5.5 moves EM 1.102 → 1.356 (+23 %). Touches no pressure or shear output. |
 | critical Reynolds | `2100*n^0.75` — no source; collapses monotonically to 222 by n = 0.05 | Ryan & Johnson (1959), non-monotonic, stays in 992–2397 | the laminar verdict string only. `Re_gen ~ 1e-4` here, so the verdict is "laminar" either way. Heuristic under-predicts 3.13x at n = 0.24, 4.31x at n = 0.088. |
 
+**Running the anchored (Tanner) path — the full chain:**
+
+```
+1. run_solver_v4                      -> master_summary_v4.csv (gives gamma_w at the wall)
+2. extract_N1_tanner.py               -> reads the force export, tares, excludes
+     --master-summary ... --needle 21G   edge fracture, interpolates N1 to gamma_w,
+     --vp 0.01                           prints a paste-ready inks_local.m line
+3. paste  inks(i).N1_wall_Pa = ...    -> into inks_local.m in the project root
+4. run_solver_v5                      -> master_summary_v5.csv + closure_report_v5.txt
+```
+
+Step 2 **refuses to extrapolate** past the measured shear-rate range. The
+needle reaches ~165–218 s⁻¹ at the nominal operating point; a flow curve that
+stops at 100 s⁻¹ cannot speak about it, and `--allow-extrapolation` stamps
+every number it produces. An ink with no `N1_wall_Pa` still runs — on the
+tagged heuristic fallback — so a partial measurement campaign is usable, but
+the two closures must not be quoted as if they were the same.
+
+Note that the Tanner `beta` is **needle-dependent** (it goes through `τ_w`),
+where the heuristic depends only on `n`. On the C15 smoke run: 0.2134 at 21G
+vs 0.1831 at 22G. That is a real effect the heuristic cannot express.
+
 `bioprinting_algorithm_v5.m` does **not** fork the physics — it resolves the
 two closures and delegates to v4 through optional override parameters.
 `validate_v5.m` asserts that v5 with no `N1` reproduces v4 bit-for-bit.
