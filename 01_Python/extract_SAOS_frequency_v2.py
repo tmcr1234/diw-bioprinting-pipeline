@@ -58,19 +58,30 @@ HERE = Path(__file__).parent.resolve()
 sys.path.insert(0, str(HERE))
 from antpar_io import (   # noqa: E402
     read_frequency_sweeps_in_folder, FrequencySweep,
+
 )
+from data_config import load as _load_data_config  # noqa: E402
+
+_CFG = _load_data_config()   # data_config_local.py in the project root,
+                             # else the built-in defaults below.
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION  ← edit here
 # ──────────────────────────────────────────────────────────────────────────────
 
-INPUT_FOLDER = "./Reologia/Frequency Sweep - 3D Bioprinting"
+# A12: the folder name is no longer a literal in this shared script.
+# It comes from data_config_local.py in the project root (the Python
+# counterpart of inks_local.m), so a project with different folder
+# names configures instead of forking. With no local config, this
+# resolves to exactly the literal that used to be hard-coded here:
+#     "./Reologia/Frequency Sweep - 3D Bioprinting"
+INPUT_FOLDER = _CFG.folder("frequency")
 
 # Optional include list — None to process every CSV in INPUT_FOLDER.
-SAMPLE_INCLUDE: list[str] | None = None
+SAMPLE_INCLUDE = _CFG.sample_include   # A12: set it in data_config_local.py
 
-SAVE_PATH = "./Analises/Python/Results"
+SAVE_PATH = _CFG.results_dir     # A12: was "./Analises/Python/Results"
 TAG = "SAOS_frequency_v2"
 
 # Targets (rad/s) for picking representative G', G'', tan δ.

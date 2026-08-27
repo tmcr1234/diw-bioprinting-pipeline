@@ -81,6 +81,15 @@ addParameter(p, 'SaveCSV',            true,  @islogical);
 addParameter(p, 'PlotResults',        true,  @islogical);
 addParameter(p, 'NumPoints',          200,   @(x) isnumeric(x) && x >= 20);
 addParameter(p, 'f_slip',             1.0,   @(x) isnumeric(x) && x > 0);
+% --- OPTIONAL CLOSURE OVERRIDES (default = exactly the v4 behaviour) -----
+% These exist so bioprinting_algorithm_v5 can supply physically anchored
+% closures WITHOUT forking 600 lines of identical physics. Left unset, every
+% number this function produces is bit-identical to pre-override v4; that is
+% asserted by validate_v5.m. Do not call them from student workflows.
+addParameter(p, 'BetaPL',     NaN, @(x) isnumeric(x) && isscalar(x));
+addParameter(p, 'BetaCross',  NaN, @(x) isnumeric(x) && isscalar(x));
+addParameter(p, 'RecritFcn',  [],  @(x) isempty(x) || isa(x,'function_handle'));
+addParameter(p, 'ClosureTag', 'v4-heuristic', @(x) ischar(x)||isstring(x));
 parse(p, sample, geom, Vp_vec, varargin{:});
 
 output_folder = char(p.Results.OutputFolder);
@@ -92,6 +101,11 @@ save_csv      = p.Results.SaveCSV;
 plot_results  = p.Results.PlotResults;
 num_points    = p.Results.NumPoints;
 f_slip        = p.Results.f_slip;
+beta_PL_ovr   = p.Results.BetaPL;
+beta_CR_ovr   = p.Results.BetaCross;
+recrit_fcn    = p.Results.RecritFcn;
+if isempty(recrit_fcn), recrit_fcn = @crit_reynolds; end
+closure_tag   = char(p.Results.ClosureTag);
 
 if ~exist(output_folder, 'dir'), mkdir(output_folder); end
 safe_name = regexprep(char(sample.name), '[<>:"/\\|?*\.\s'']', '_');
@@ -131,7 +145,30 @@ A_syringe = pi * Rs^2;
 [CR.Q, CR.dP_syr, CR.dP_needle, CR.dP_total, CR.absP_syr_in, CR.absP_needle_in, ...
  CR.tau_w_needle, CR.gamma_w_needle, CR.tau_w_syr, CR.gamma_w_syr, ...
  CR.Re_needle, CR.Re_syr, CR.u_avg_needle, CR.u_max_needle] = deal(zeros(n_v,1));
-PL.Re_crit = 2100 * n^0.75;
+% --- CRITICAL REYNOLDS ESTIMATE ------------------------------------------
+% HEURISTIC, NOT LITERATURE. The former inline expression 2100*n^0.75 is an
+% in-house conservative scaling of the Newtonian pipe value. It has no
+% published source and it disagrees badly with the accepted correlation
+% (Ryan & Johnson 1959, AIChE J 5(4):433-435, doi:10.1002/aic.690050407):
+%     Re_c = 6464*n*(2+n)^((2+n)/(1+n)) / (3n+1)^2
+% The defect is the SHAPE of the n-dependence, not merely its size. Ryan-
+% Johnson is NON-MONOTONIC: it rises from 2099 at n=1 to a maximum of 2397
+% at n=0.42, then falls back, staying inside 992-2397 over n in [0.05,1].
+% The heuristic instead collapses monotonically over that same window,
+% 2100 -> 222, a 9.5x swing the correlation simply does not have. Across
+% the shear-thinning range this lab works in, the heuristic therefore
+% UNDER-predicts Re_crit by 3-4x:
+%     n = 0.24 (C15-SF5.5)   720 vs 2251   -> 3.13x
+%     n = 0.088 (C20)        339 vs 1462   -> 4.31x
+% (An earlier internal note called this a sign error - it is not. The
+% correlation is non-monotonic; do not "fix" it back to a monotonic rise.)
+% The laminar VERDICT is insensitive to the choice (Re_gen ~ 1e-4 here), so
+% this is a reporting/labelling defect rather than a physics error, and v4
+% keeps the heuristic for numerical continuity with already-reported runs.
+% Replaced by the Ryan-Johnson correlation in bioprinting_algorithm_v5.
+% Defined ONCE in crit_reynolds() below - never re-derive it inline.
+PL.Re_crit = recrit_fcn(n);
+sample.Re_crit_used = PL.Re_crit;   % so write_combined_data cannot re-derive a different one
 profiles = cell(n_v,1);
 
 %% ==================================================================
@@ -210,12 +247,64 @@ end
 %% ==================================================================
 %% SLICER LAYER (across Vp)
 %% ==================================================================
-beta_PL = max(0, 0.30*(1 - n));
-beta_CR = max(0, 0.30*(1 - mC));
+% --- DIE-SWELL CLOSURE ---------------------------------------------------
+% HEURISTIC, NOT LITERATURE, AND PROBABLY WRONG-SIGNED. beta = 0.30*(1-n) is
+% an in-house closure with no published source. It makes swell GROW as the
+% ink gets more shear-thinning, whereas the physics runs the other way: a
+% low-n ink flows closer to plug flow, stores less elastic recoverable
+% strain, and should swell LESS. Against the one measured case available to
+% this group it over-predicts by ~2.5x (predicted ~0.27 vs measured 0.107).
+%
+% Physically anchored alternatives, for when N1 is available:
+%   - inelastic floor, beta ~ 0.13 (Nickell, Tanner & Yamada 1974,
+%     J Fluid Mech 65(1):189-206, doi:10.1017/S0022112074001339)
+%   - Tanner elastic closure from the measured first normal-stress
+%     difference (Tanner 1970, J Polym Sci A-2 8(12):2067-2078,
+%     doi:10.1002/pol.1970.160081203):
+%         d/D  = 0.13 + [ 1 + 0.5*( N1_w / (2*tau_w) )^2 ]^(1/6)
+%         beta = d/D - 1
+%     N1_w -> 0 recovers the 0.13 inelastic floor, which is why the two
+%     alternatives above are one closure, not two.
+% Even the best-anchored estimate does not reach the measured value; the
+% residual is a free-jet-vs-deposited-road definition mismatch, NOT a fit
+% problem. Do not tune the constant to close that gap.
+%
+% CONSEQUENCE, so nobody treats this as cosmetic: beta propagates into
+% k_flow, and the slicer rule is Extrusion Multiplier = 1/k_flow. Moving
+% beta from 0.228 to 0.107 on C15-SF5.5 moves the extrusion multiplier from
+% 1.102 to 1.356 (+23%) and narrows w_line by 10%. It does NOT touch any
+% pressure, shear or Reynolds output.
+%
+% v5 exposes an optional Tanner path keyed on measured N1; v4 keeps the
+% heuristic so previously reported slicer CSVs remain reproducible.
+if isnan(beta_PL_ovr)
+    beta_PL = max(0, 0.30*(1 - n));     % HEURISTIC - see block above
+else
+    beta_PL = beta_PL_ovr;              % supplied by caller (v5 Tanner path)
+end
+if isnan(beta_CR_ovr)
+    beta_CR = max(0, 0.30*(1 - mC));    % HEURISTIC - see block above
+else
+    beta_CR = beta_CR_ovr;
+end
+
+% --- SLICER CONVENTION (the k_flow placement that bit a manuscript) ------
+% Two DIFFERENT quantities, both derived from beta, and they must not be
+% mixed:
+%   w_line  = 2*Rn*(1+beta)                 deposited road width (m)
+%   v_print = Q / (w_line * h_layer)        head speed (m/s)  <- NO k_flow
+%   k_flow  = (1+beta)^2 * f_slip * sqrt(Rrec/100)   deposition efficiency
+%
+% v_print is pure mass conservation of the road cross-section: it carries no
+% efficiency term. k_flow is a SEPARATE slicer input, applied as
+% Extrusion Multiplier = 1 / k_flow. Writing v_print = Q*k_flow/(w*h) is
+% wrong and double-counts the swell; that exact error survived three
+% manuscript drafts before a numerical audit caught it. Copy these three
+% lines verbatim into any Methods section rather than re-deriving them.
 w_line_PL = 2*Rn*(1 + beta_PL);
 w_line_CR = 2*Rn*(1 + beta_CR);
-v_print_PL = PL.Q ./ (w_line_PL * h_layer);   % m/s
-v_print_CR = CR.Q ./ (w_line_CR * h_layer);
+v_print_PL = PL.Q ./ (w_line_PL * h_layer);   % m/s - no k_flow term
+v_print_CR = CR.Q ./ (w_line_CR * h_layer);   % m/s - no k_flow term
 k_flow_PL = (1+beta_PL)^2 * f_slip * sqrt(Rrec_pct/100);
 k_flow_CR = (1+beta_CR)^2 * f_slip * sqrt(Rrec_pct/100);
 
@@ -223,6 +312,7 @@ slicer.PL = struct('beta',beta_PL,'w_line_mm',w_line_PL*1e3,'h_layer_mm',h_layer
     'v_print_mm_s',v_print_PL*1e3,'k_flow',k_flow_PL);
 slicer.CR = struct('beta',beta_CR,'w_line_mm',w_line_CR*1e3,'h_layer_mm',h_layer*1e3, ...
     'v_print_mm_s',v_print_CR*1e3,'k_flow',k_flow_CR);
+slicer.closure = closure_tag;   % which die-swell closure produced these betas
 
 if save_csv
     write_slicer_csv(output_folder, safe_name, geom, Vp_vec, PL, CR, ...
@@ -243,6 +333,8 @@ results.PL      = PL;
 results.Cross   = CR;
 results.profiles= profiles;
 results.slicer  = slicer;
+results.Re_crit = PL.Re_crit;
+results.closure = closure_tag;
 results.orientation = orientation;
 results.hydrostatic_Pa = hydro;
 
@@ -252,6 +344,18 @@ end  % ===================== END MAIN =====================
 %% ====================================================================
 %% LOCAL FUNCTIONS
 %% ====================================================================
+
+function Re_c = crit_reynolds(n)
+%CRIT_REYNOLDS  Critical generalised Reynolds number - IN-HOUSE HEURISTIC.
+%   Re_c = 2100*n^0.75. Conservative scaling of the Newtonian pipe value.
+%   NOT a literature correlation. Ryan & Johnson (1959) gives
+%   Re_c = 6464*n*(2+n)^((2+n)/(1+n))/(3n+1)^2, which is non-monotonic
+%   (max 2397 at n=0.42) and never leaves 992-2397; this heuristic instead
+%   collapses to 222 at n=0.05, under-predicting by 3-4x at working n.
+%   Kept in v4 for continuity with reported runs; v5 replaces it.
+%   Sole definition in this file - callers must not re-derive it inline.
+    Re_c = 2100 * n^0.75;
+end
 
 function s = pl_section(Q, K, n, R, L, rho, npts)
 % Power-Law fully-developed pipe flow (analytical) for one constant-radius tube.
@@ -412,7 +516,7 @@ function write_combined_data(out, safe_name, geom, sample, Vp, orientation, inc_
     fprintf(fid, 'Reynolds Analysis:\n');
     fprintf(fid, '  Syringe generalized Reynolds number: %.9e\n', pl.syr.Re);
     fprintf(fid, '  Needle generalized Reynolds number: %.9e\n', pl.needle.Re);
-    Re_crit = 2100 * sample.n_PL^0.75;
+    Re_crit = sample.Re_crit_used;   % resolved by the caller; see note at PL.Re_crit
     fprintf(fid, '  Critical Reynolds estimate: %.9e\n', Re_crit);
     if pl.needle.Re < Re_crit && pl.syr.Re < Re_crit
         verdict = 'Likely laminar based on generalized Reynolds-number estimate';

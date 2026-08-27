@@ -69,6 +69,12 @@ STRAIN_FILES = {
 }
 
 COLORS = {"C15": "#1f77b4", "NE": "#ff7f0e", "Bozano": "#2ca02c"}
+# B21: how far |eta*|/eta may stray from 1 before the Cox-Merz rule is
+# declared broken for an ink. 20% is loose enough to ignore interpolation
+# scatter at the ends of the overlap window and tight enough to catch the
+# known C20 failure (ratio 1.91 = 91% departure).
+COXMERZ_TOL = 0.20
+
 LABELS = {"C15": "C15", "NE": "C15 + Gira 5.5", "Bozano": "Bozano"}
 N_LOW = 6  # low-omega / low-strain points used for the power-law fits
 
@@ -222,12 +228,35 @@ def main():
         eta_at_w = 10 ** np.interp(np.log10(wo), np.log10(sr), np.log10(eta))
         ratio = etastar[msk] / eta_at_w
         rmean, rmax = float(np.mean(ratio)), float(np.max(ratio))
-        emit(f"  {LABELS[ink]:<14} {f'{lo:.2g}-{hi:.2g}':>16} {rmean:>16.2f} {rmax:>15.2f}")
+        # ---- B21: turn the ratio into a verdict, not just a number -----
+        # The Cox-Merz rule states |eta*|(w) = eta(gamma_dot) at w = gamma_dot.
+        # When it holds, |eta*| may legitimately stand in for eta -- which is
+        # what makes the SAOS-derived N1 shortcut available. When it FAILS,
+        # that substitution is invalid, and the failure has to be caught by a
+        # human reading the number. It was, once, for C20 (ratio 1.91); the
+        # script computed the number and said nothing about it. Now it does.
+        departure = max(abs(rmean - 1.0), abs(rmax - 1.0))
+        if departure > COXMERZ_TOL:
+            verdict = (f"FAILS (ratio mean={rmean:.2f}, max={rmax:.2f}; "
+                       f"{departure*100:.0f}% from unity, tol {COXMERZ_TOL*100:.0f}%)")
+            flag = "  [!] Cox-Merz does not hold well for this ink -- do NOT substitute |eta*| for eta."
+        else:
+            verdict = f"holds (ratio mean={rmean:.2f}, max={rmax:.2f})"
+            flag = ""
+        emit(f"  {LABELS[ink]:<14} {f'{lo:.2g}-{hi:.2g}':>16} {rmean:>16.2f} {rmax:>15.2f}"
+             f"   {verdict}")
+        if flag:
+            emit(flag)
         rows.setdefault(ink, {}).update(
             coxmerz_overlap_lo=lo, coxmerz_overlap_hi=hi,
-            coxmerz_ratio_mean=rmean, coxmerz_ratio_max=rmax)
+            coxmerz_ratio_mean=rmean, coxmerz_ratio_max=rmax,
+            coxmerz_holds=(departure <= COXMERZ_TOL),
+            coxmerz_departure=departure)
     emit("\n  Reading: a larger |eta*|/eta => stronger at-rest structure not probed by")
     emit("  steady shear (depletion network). Compare composite vs C15.")
+    emit(f"  Any ink flagged above departs from unity by more than {COXMERZ_TOL*100:.0f}%.")
+    emit("  For those inks |eta*| is not a proxy for eta, so any route that derives")
+    emit("  a steady-shear quantity (N1 included) from the oscillatory data is closed.")
 
     # ============================ (C) G'' overshoot =========================
     emit("\n[C] AMPLITUDE SWEEP: G'' weak-strain-overshoot (Payne / LAOS type III)")

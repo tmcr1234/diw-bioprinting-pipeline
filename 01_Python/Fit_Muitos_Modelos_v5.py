@@ -54,6 +54,14 @@ sys.path.insert(0, str(HERE))
 from antpar_io import read_flow_curves_in_folder, FlowCurve  # noqa: E402
 
 
+from data_config import load as _load_data_config  # noqa: E402
+from flow_diagnostics import (   # noqa: E402
+    detect_startup_transient, detect_edge_fracture,
+)
+
+_CFG = _load_data_config()   # data_config_local.py in the project root,
+                             # else the built-in defaults below.
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 1.  MODEL DEFINITIONS  (unchanged from v4)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -169,15 +177,21 @@ def fit_log(model_fn, X, Y, p0, bounds):
 
 # Folder containing raw Rheocompass flow-curve CSVs (the _Analysis.csv
 # files are skipped automatically by antpar_io.list_flow_curves).
-INPUT_FOLDER = "./Reologia/Viscosity"
+# A12: the folder name is no longer a literal in this shared script.
+# It comes from data_config_local.py in the project root (the Python
+# counterpart of inks_local.m), so a project with different folder
+# names configures instead of forking. With no local config, this
+# resolves to exactly the literal that used to be hard-coded here:
+#     "./Reologia/Viscosity"
+INPUT_FOLDER = _CFG.folder("flow")
 
 # Optional: restrict to a subset of samples. Leave as None to fit every
 # raw CSV in INPUT_FOLDER. Keys must match the short filename prefix
 # (text before " - "), e.g. ["AMOSTRA A", "AMOSTRA C"].
-SAMPLE_INCLUDE: list[str] | None = None
+SAMPLE_INCLUDE = _CFG.sample_include   # A12: set it in data_config_local.py
 
 # Where to write the report and CSV.
-SAVE_PATH = "./Analises/Python/Results"
+SAVE_PATH = _CFG.results_dir     # A12: was "./Analises/Python/Results"
 TAG = "AntPar-v5"   # appears in output filenames
 
 
@@ -212,6 +226,18 @@ def fit_one_sample(short_name: str, fc: FlowCurve, fout, csv_rows: list):
     if len(gd) < 4:
         fout.write("  [!] Too few positive data points to fit. Skipping.\n\n")
         return
+
+    # ---- A7 / A8: shape diagnostics, BEFORE any fitting ----------------
+    # Neither artefact is visible in a fit statistic. A startup transient
+    # moves eta0 by 19-31% without hurting R^2; edge fracture wrecks R^2
+    # without saying which points caused it. Report, never auto-trim.
+    tr = detect_startup_transient(gd, eta)
+    ef = detect_edge_fracture(gd, tau)
+    fout.write("  DATA-SHAPE DIAGNOSTICS\n")
+    fout.write(f"    startup transient : {tr.message}\n")
+    fout.write(f"    edge fracture     : {ef.message}\n\n")
+
+    gd_full, tau_full, eta_full = gd, tau, eta
 
     # ---- Stress-domain fits ----
     fout.write("  STRESS-DOMAIN MODELS  (fit τ vs γ̇)\n")
@@ -263,6 +289,43 @@ def fit_one_sample(short_name: str, fc: FlowCurve, fout, csv_rows: list):
         fout.write(f"    viscosity →  {best_v[0]}   (AIC={best_v[1]['aic']:.2f})\n")
     fout.write("\n")
 
+    # ---- A7: the same fits with the startup head excluded --------------
+    # Reported SIDE BY SIDE rather than substituted, so the sensitivity of
+    # the headline parameters to the fitting range is on the record instead
+    # of being discovered by an editor.
+    if tr.detected and tr.n_excluded > 0 and (len(gd_full) - tr.n_excluded) >= 4:
+        gd_t = gd_full[tr.n_excluded:]
+        tau_t = tau_full[tr.n_excluded:]
+        eta_t = eta_full[tr.n_excluded:]
+        fout.write(f"  TRANSIENT-EXCLUDED REFIT  (first {tr.n_excluded} points dropped, "
+                   f"gamma_dot > {tr.gamma_dot_cut:.4g} 1/s)\n")
+        fout.write(f"  {'model':<10} | {'full range':>14} | {'excluded':>14} | {'shift':>9}\n")
+        fout.write("  " + "-" * 58 + "\n")
+        for name, (fn, p0, bnds, pnames) in {**MODEL_STRESS, **MODEL_VISCOSITY}.items():
+            if name not in {**stress_results, **visc_results}:
+                continue
+            base = {**stress_results, **visc_results}[name]
+            ydata = tau_t if base["domain"] == "stress" else eta_t
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    params_t, _ = fit_log(fn, gd_t, ydata, p0, bnds)
+            except Exception as e:
+                fout.write(f"  {name:<10} | refit FAILED: {e}\n")
+                continue
+            # Compare the first parameter — K for the stress models, eta0
+            # for the viscosity models. That is the one that gets quoted.
+            v_full, v_excl = base["params"][0], params_t[0]
+            shift = (v_excl / v_full - 1) * 100 if v_full else float("nan")
+            fout.write(f"  {name:<10} | {v_full:>14.6g} | {v_excl:>14.6g} | "
+                       f"{shift:>8.1f}%   ({pnames[0]})\n")
+            csv_rows.append({"sample": short_name, "model": name,
+                             "domain": base["domain"] + "_transient_excluded",
+                             "R2_log": float("nan"), "AIC": float("nan"),
+                             "BIC": float("nan"),
+                             **dict(zip(pnames, params_t))})
+        fout.write("\n")
+
     # ---- Accumulate CSV rows ----
     for name, r in {**stress_results, **visc_results}.items():
         row = {"sample": short_name, "model": name, "domain": r["domain"],
@@ -295,6 +358,38 @@ def main() -> int:
         fout.write("=" * 78 + "\n")
         fout.write(f"  RHEOLOGY LOG-FIT RESULTS  ({TAG})  -  Anton Paar Rheocompass CSV\n")
         fout.write("=" * 78 + "\n\n")
+
+        # ---- A11: the methods sentence, generated rather than recalled ----
+        # A manuscript once described this same fit two different ways in two
+        # sections ("least squares in log-log space" in one, "weighted least
+        # squares with weights 1/eta^2" in the other). Both are true and they
+        # are the same procedure, but a reader cannot know that, and an
+        # external audit had to establish it on the exact passage an editor
+        # was querying. The statement now ships with the numbers.
+        fout.write("  METHODS SENTENCE (copy verbatim into a Methods section)\n")
+        fout.write("  " + "-" * 74 + "\n")
+        fout.write(
+            "  Model parameters were obtained by minimising the sum of squared\n"
+            "  residuals in log space, sum((log y_hat - log y)^2), which is\n"
+            "  mathematically equivalent to weighted least squares on the linear\n"
+            "  data with weights w = 1/y^2; this weighting gives each decade of\n"
+            "  shear rate equal influence. AIC and BIC were computed on the same\n"
+            "  log-space residuals.\n\n")
+        fout.write(
+            "  AIC/BIC ARE NOT COMPARABLE ACROSS DOMAINS. Stress-domain models\n"
+            "  (Herschel-Bulkley, Power-Law, Bingham, Casson) are fitted to tau\n"
+            "  and viscosity-domain models (Cross, Carreau, Ellis) to eta, so\n"
+            "  their likelihoods are taken over different data. Compare within a\n"
+            "  domain only.\n\n")
+
+        # ---- B20: provenance block ----------------------------------------
+        instruments = sorted({getattr(fc, "instrument", "") for fc in curves.values()} - {""})
+        fout.write("  PROVENANCE\n")
+        fout.write("  " + "-" * 74 + "\n")
+        fout.write(f"  instrument : {', '.join(instruments) if instruments else '(not recorded in export header)'}\n")
+        for line in _CFG.describe().splitlines():
+            fout.write(f"  {line}\n")
+        fout.write("\n")
         for short_name, fc in curves.items():
             fit_one_sample(short_name, fc, fout, csv_rows)
 

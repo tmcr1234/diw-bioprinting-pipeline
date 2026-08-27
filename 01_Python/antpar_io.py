@@ -70,6 +70,7 @@ class FlowCurve:
     data: pd.DataFrame = field(repr=False)
     # Columns: point, shear_rate_1_s, shear_stress_Pa,
     #          viscosity_Pa_s (CONVERTED from mPa·s),
+    instrument: str = ""     # B20: from the export header, "" if absent
     #          temperature_C, torque_mNm, status
 
 
@@ -85,6 +86,7 @@ class AmplitudeSweep:
     # Columns: point, strain_frac, strain_pct (= strain_frac*100),
     #          shear_stress_Pa, G_storage_Pa, G_loss_Pa, tan_delta,
     #          torque_uNm, status
+    instrument: str = ""     # B20: from the export header, "" if absent
     # NOTE: no temperature column — Rheocompass amplitude sweeps don't
     # emit T. Use the filename / Teste: header to recover setpoint.
 
@@ -102,6 +104,7 @@ class FrequencySweep:
     #          eta_complex_real_Pa_s (CONVERTED from mPa·s),
     #          eta_complex_imag_Pa_s (CONVERTED from mPa·s),
     #          G_complex_Pa, strain_pct, shear_stress_Pa, torque_mNm, status
+    instrument: str = ""     # B20: from the export header, "" if absent
     # NOTE: no temperature column (same as amplitude sweep). Strain here is
     # the controlled SAOS amplitude in PERCENT (≠ amplitude-sweep [1]
     # fractional convention). Torque is in mN·m (≠ amplitude-sweep µN·m).
@@ -148,6 +151,16 @@ _HEADER_LABELS = {
     "projeto": "project",
     "teste": "sample_name",
     "resultado": "interval_label",
+    # Instrument identity. The header block always carried this field; the
+    # parser simply never extracted it, which is how an ARES-G2 dataset sat
+    # mislabelled as an MCR in a project CLAUDE.md for months. Downstream
+    # scripts must echo `instrument` into their report headers so the
+    # machine that produced a number travels with the number.
+    "instrumento": "instrument",
+    "instrument": "instrument",
+    "instrument name": "instrument",
+    "dispositivo": "instrument",
+    "device": "instrument",
 }
 
 # Filename suffixes that mark Rheocompass "analysis" exports (regression
@@ -284,10 +297,380 @@ def read_flow_curve_csv(path: str | Path) -> FlowCurve:
     ])
 
     return FlowCurve(
+        instrument=meta.get("instrument", ""),
         sample_name=meta.get("sample_name", path.stem),
         project=meta.get("project", ""),
         interval_label=meta.get("interval_label", ""),
         n_points=meta["n_points"] if isinstance(meta.get("n_points"), int) else len(df),
+        source_path=path,
+        data=df,
+    )
+
+
+# ----------------------------------------------------------------------
+# Force-augmented flow curves — normal stress / N1
+# ----------------------------------------------------------------------
+#
+# WHY THIS EXISTS
+# ---------------
+# The die-swell closure in the MATLAB solver needs the first normal-stress
+# difference N1. Rheocompass' standard flow-curve export does not carry a
+# normal-force channel, so N1 has to come from a re-export with the axial
+# force column switched on. That produces a DIFFERENT file format from
+# everything else this module reads, and every step of handling it — the
+# encoding, the column mapping, the unit conversion, the baseline
+# correction — was previously rebuilt ad hoc in throwaway scripts.
+#
+# FORMAT WARNING (this is the trap)
+# ---------------------------------
+# The force-augmented export is **latin-1**, NOT the UTF-16 LE this module
+# assumes everywhere else. Assuming UTF-16 does not raise — it silently
+# mojibakes. `_decode_force_export` therefore never calls `_decode_utf16`.
+#
+# PROVENANCE OF THIS PARSER
+# -------------------------
+# Written from the documented format contract, NOT against a specimen file
+# (the force exports are not present in every checkout of this pipeline).
+# It is deliberately header-driven rather than positional so it survives a
+# column-order change, and `read_flow_curve_with_force` raises a loud,
+# specific error rather than guessing when it cannot find a channel.
+# BEFORE TRUSTING ITS OUTPUT on a new machine, run it once against a file
+# whose values you can read by eye and confirm the mapping.
+
+_FORCE_ENCODING = "latin-1"
+
+# Canonical channel names → the header substrings that mark them. Matched
+# case-insensitively against the normalised header cell. Order matters:
+# the first hit wins, so put the more specific token first.
+_FORCE_COLUMN_TOKENS = {
+    "shear_rate_1_s":   ("shear rate", "taxa de cisalhamento", "gamma dot"),
+    "shear_stress_Pa":  ("shear stress", "tensao de cisalhamento", "stress"),
+    "viscosity_Pa_s":   ("viscosity", "viscosidade"),
+    "nstress_Pa":       ("normal stress", "tensao normal"),
+    "force_N":          ("axial force", "normal force", "forca axial", "force"),
+    "time_s":           ("step time", "tempo", "time"),
+    "temperature_C":    ("temperature", "temperatura"),
+}
+
+# Geometry radii (m). N1 = 2F/(pi R^2) needs the PLATE/CONE radius, not the
+# nominal diameter in the geometry's name.
+GEOMETRY_RADIUS_M = {
+    "CP50": 25.0e-3,   # 50 mm cone   → 25 mm radius
+    "PP50": 25.0e-3,   # 50 mm plate  → 25 mm radius
+    "CP25": 12.5e-3,
+    "PP25": 12.5e-3,
+}
+
+
+def normal_stress_from_force(F_newtons, R_meters: float):
+    """
+    First normal-stress difference from the measured axial force.
+
+        N1 = 2F / (pi R^2)
+
+    Parameters
+    ----------
+    F_newtons : float or array-like
+        Axial (normal) force, in NEWTONS. If the export is in grams-force
+        or millinewtons, convert BEFORE calling — this function does no
+        unit sniffing.
+    R_meters : float
+        Cone/plate radius in metres (25e-3 for a 50 mm geometry — the
+        RADIUS, not the diameter that names the fixture). See
+        ``GEOMETRY_RADIUS_M``.
+
+    Returns
+    -------
+    float or numpy.ndarray — N1 in Pa.
+    """
+    if R_meters <= 0:
+        raise ValueError(f"R_meters must be positive, got {R_meters}")
+    return 2.0 * np.asarray(F_newtons, dtype=float) / (np.pi * R_meters ** 2)
+
+
+def baseline_correct(series, method: str = "min"):
+    """
+    Remove the per-run transducer offset from a force / normal-stress channel.
+
+    WHY IT IS NEEDED
+    ----------------
+    The normal-force transducer is not necessarily re-zeroed between sample
+    loadings, so raw readings carry a large, sign-varying offset that is
+    constant within one run. Without a tare the reported N1 is meaningless,
+    and a negative N1 (physically impossible in steady shear on these gels)
+    is the usual symptom.
+
+    METHOD
+    ------
+    ``"min"`` (the correct convention): floor = min(series) over the whole
+    run; corrected = series - floor. The run's quietest point is taken as
+    the zero.
+
+    ``"median_low25"`` — REJECTED, KEPT ONLY SO IT IS NOT RETRIED. Taking
+    the median of the 25 lowest points was tried first and gives a
+    materially wrong answer: on the C20 run it returned ~460 Pa where the
+    min convention returns ~802 Pa, a 74% error, because the low tail of a
+    ramp is populated by genuine low-shear data, not by baseline. Selecting
+    it raises. If you believe you need it, you have found a different
+    problem — probably a drifting rather than offset baseline, which this
+    function is the wrong tool for.
+
+    Parameters
+    ----------
+    series : array-like
+    method : {"min"}
+
+    Returns
+    -------
+    (corrected, floor) : (numpy.ndarray, float)
+    """
+    arr = np.asarray(series, dtype=float)
+    if method == "median_low25":
+        raise ValueError(
+            "baseline_correct(method='median_low25') is a REJECTED convention. "
+            "It was tried and gives ~460 Pa where the correct min convention "
+            "gives ~802 Pa on the same C20 run (74% error), because the low "
+            "tail of a shear ramp holds real data, not baseline. Use "
+            "method='min'."
+        )
+    if method != "min":
+        raise ValueError(f"unknown baseline method {method!r}; only 'min' is supported")
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        raise ValueError("baseline_correct: series has no finite values")
+    floor = float(np.min(finite))
+    return arr - floor, floor
+
+
+# Filename pairing between the audited .xls workbooks and the force .txt
+# re-exports. These are KNOWN ONE-OFF EXCEPTIONS, not a naming scheme, so
+# this is a hard-coded lookup rather than fuzzy matching — fuzzy matching
+# would silently pick the wrong C10 file, which is the failure this table
+# exists to prevent. Extend it by hand when a new ink is re-exported.
+_AUDITED_FILE_PAIRS = {
+    # ink : (xls basename, force-txt basename, note)
+    "C25": (
+        "C25",
+        "C25",
+        "the force export has a DOUBLE space where the .xls has one",
+    ),
+    "gel": (
+        "gel (Ac)",
+        "gel ",
+        "the force export drops the '(Ac)' and adds a TRAILING space",
+    ),
+    "C10": (
+        "C10 (1)",
+        "C10 (1)",
+        "TWO candidate files exist; only the one with '(1)' is audited",
+    ),
+}
+
+
+def pair_audited_files(ink: str) -> dict:
+    """
+    Return the audited .xls / force-.txt basenames for one ink.
+
+    The pairing is trap-laden and the traps are not systematic — see
+    ``_AUDITED_FILE_PAIRS``. Always go through this function rather than
+    globbing, so the exceptions are discovered once and stay discovered.
+
+    Raises KeyError with the list of known inks if `ink` is not registered.
+    """
+    key = ink.strip()
+    if key not in _AUDITED_FILE_PAIRS:
+        raise KeyError(
+            f"{ink!r} has no audited file pairing registered. Known: "
+            f"{sorted(_AUDITED_FILE_PAIRS)}. Add it to _AUDITED_FILE_PAIRS "
+            f"by hand after checking the actual filenames — do NOT glob."
+        )
+    xls, txt, note = _AUDITED_FILE_PAIRS[key]
+    return {"ink": key, "xls_basename": xls, "force_txt_basename": txt, "note": note}
+
+
+@dataclass
+class FlowCurveWithForce:
+    """A flow curve that additionally carries a tared normal-stress channel."""
+    sample_name: str
+    project: str
+    instrument: str
+    geometry: str
+    radius_m: float
+    baseline_floor_Pa: float
+    n_points: int
+    source_path: Path
+    data: "pd.DataFrame" = field(repr=False)
+    # Columns: point, shear_rate_1_s, shear_stress_Pa, viscosity_Pa_s,
+    #          nstress_raw_Pa, N1_Pa (tared), plus time_s / temperature_C
+    #          when the export carries them.
+
+
+def _decode_force_export(path: Path) -> list[str]:
+    """Read a force-augmented export as latin-1 text, CRLF-tolerant."""
+    raw = Path(path).read_bytes()
+    if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
+        raise ValueError(
+            f"{Path(path).name} is UTF-16, not the latin-1 force-export "
+            "format. Use read_flow_curve_csv for Rheocompass exports."
+        )
+    return raw.decode(_FORCE_ENCODING).replace("\r\n", "\n").split("\n")
+
+
+def _normalise_header_cell(cell: str) -> str:
+    return " ".join(cell.strip().strip('"').lower().split())
+
+
+def _map_force_columns(header_cells: list[str]) -> dict:
+    """Map canonical channel names to column indices, header-driven."""
+    norm = [_normalise_header_cell(c) for c in header_cells]
+    mapping: dict[str, int] = {}
+    for canon, tokens in _FORCE_COLUMN_TOKENS.items():
+        for tok in tokens:
+            hit = next((i for i, h in enumerate(norm)
+                        if tok in h and i not in mapping.values()), None)
+            if hit is not None:
+                mapping[canon] = hit
+                break
+    return mapping
+
+
+def _parse_any_decimal(token: str) -> float:
+    """Parse a number written with either a comma or a point decimal mark."""
+    t = token.strip().strip('"')
+    if not t:
+        return float("nan")
+    if "," in t and "." in t:
+        # e.g. 1.234,56 (European thousands) vs 1,234.56 (US thousands)
+        t = t.replace(".", "").replace(",", ".") if t.rfind(",") > t.rfind(".") \
+            else t.replace(",", "")
+    elif "," in t:
+        t = t.replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return float("nan")
+
+
+def read_flow_curve_with_force(
+    path: str | Path,
+    geometry: str = "CP50",
+    radius_m: float | None = None,
+    force_unit: str = "N",
+) -> FlowCurveWithForce:
+    """
+    Parse a force-augmented flow-curve export and return a TARED N1 channel.
+
+    One call replaces the whole ad hoc chain: latin-1 decode (B16), header-
+    driven column mapping, either decimal convention, N1 = 2F/(pi R^2)
+    conversion (B19) when only a force channel is present, and the
+    min-baseline tare (A5).
+
+    Parameters
+    ----------
+    path : file to read.
+    geometry : fixture name, used to look up the radius (see
+        ``GEOMETRY_RADIUS_M``). Ignored if `radius_m` is given.
+    radius_m : explicit radius in metres; overrides `geometry`.
+    force_unit : {"N", "mN", "gf"} — unit of the axial-force column, if the
+        export carries force rather than normal stress. No sniffing is done;
+        state it.
+
+    Returns
+    -------
+    FlowCurveWithForce, whose ``data`` frame carries ``N1_Pa`` alongside the
+    usual flow-curve columns. ``baseline_floor_Pa`` records what was
+    subtracted, so the tare is auditable rather than invisible.
+    """
+    path = Path(path)
+    lines = _decode_force_export(path)
+
+    # ---- locate the header row: the first line naming a shear-rate channel
+    hdr_idx = None
+    for i, line in enumerate(lines[:200]):
+        cells = line.split("\t") if "\t" in line else line.split()
+        norm = " ".join(_normalise_header_cell(c) for c in cells)
+        if any(tok in norm for tok in _FORCE_COLUMN_TOKENS["shear_rate_1_s"]):
+            hdr_idx = i
+            break
+    if hdr_idx is None:
+        raise ValueError(
+            f"{path.name}: no header row naming a shear-rate channel was found "
+            f"in the first 200 lines. This parser is header-driven by design; "
+            f"check that the export actually carries column titles."
+        )
+
+    header_cells = lines[hdr_idx].split("\t")
+    cols = _map_force_columns(header_cells)
+    if "shear_rate_1_s" not in cols:
+        raise ValueError(f"{path.name}: shear-rate column not identified.")
+    if "nstress_Pa" not in cols and "force_N" not in cols:
+        raise ValueError(
+            f"{path.name}: neither a normal-stress nor an axial-force column "
+            f"was found. Re-export from the instrument software with the "
+            f"axial force channel switched on — that is the whole point of "
+            f"this reader. Columns seen: "
+            f"{[_normalise_header_cell(c) for c in header_cells]}"
+        )
+
+    # ---- instrument identity (B20), scanned from the pre-header block
+    instrument = ""
+    for line in lines[:hdr_idx]:
+        low = line.lower()
+        for label in ("instrument name", "instrument", "instrumento", "device"):
+            if label in low:
+                parts = line.split("\t") if "\t" in line else line.split(":", 1)
+                if len(parts) > 1 and parts[-1].strip():
+                    instrument = parts[-1].strip().strip('"')
+                    break
+        if instrument:
+            break
+
+    # ---- data rows
+    rows = []
+    for line in lines[hdr_idx + 1:]:
+        if not line.strip():
+            continue
+        cells = line.split("\t")
+        if len(cells) <= max(cols.values()):
+            continue
+        vals = {c: _parse_any_decimal(cells[i]) for c, i in cols.items()}
+        if not np.isfinite(vals["shear_rate_1_s"]):
+            continue        # units row, section break, or trailing text
+        rows.append(vals)
+
+    if not rows:
+        raise ValueError(f"{path.name}: header found but no numeric data rows parsed.")
+
+    df = pd.DataFrame(rows)
+    df.insert(0, "point", np.arange(1, len(df) + 1))
+
+    R = radius_m if radius_m is not None else GEOMETRY_RADIUS_M.get(geometry)
+    if R is None:
+        raise ValueError(
+            f"unknown geometry {geometry!r}; pass radius_m explicitly or add "
+            f"it to GEOMETRY_RADIUS_M. Known: {sorted(GEOMETRY_RADIUS_M)}"
+        )
+
+    # ---- raw normal stress: measured directly, or from the force channel
+    if "nstress_Pa" in df.columns and np.isfinite(df["nstress_Pa"]).any():
+        nstress_raw = df["nstress_Pa"].to_numpy(dtype=float)
+    else:
+        scale = {"N": 1.0, "mN": 1e-3, "gf": 9.80665e-3}[force_unit]
+        nstress_raw = normal_stress_from_force(
+            df["force_N"].to_numpy(dtype=float) * scale, R)
+
+    N1, floor = baseline_correct(nstress_raw, method="min")
+    df["nstress_raw_Pa"] = nstress_raw
+    df["N1_Pa"] = N1
+
+    return FlowCurveWithForce(
+        sample_name=path.stem,
+        project="",
+        instrument=instrument,
+        geometry=geometry,
+        radius_m=R,
+        baseline_floor_Pa=floor,
+        n_points=len(df),
         source_path=path,
         data=df,
     )
@@ -364,6 +747,7 @@ def read_amplitude_sweep_csv(path: str | Path) -> AmplitudeSweep:
     ])
 
     return AmplitudeSweep(
+        instrument=meta.get("instrument", ""),
         sample_name=meta.get("sample_name", path.stem),
         project=meta.get("project", ""),
         interval_label=meta.get("interval_label", ""),
@@ -450,6 +834,7 @@ def read_frequency_sweep_csv(path: str | Path) -> FrequencySweep:
     ])
 
     return FrequencySweep(
+        instrument=meta.get("instrument", ""),
         sample_name=meta.get("sample_name", path.stem),
         project=meta.get("project", ""),
         interval_label=meta.get("interval_label", ""),

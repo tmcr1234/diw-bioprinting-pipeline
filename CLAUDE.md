@@ -76,6 +76,67 @@ status `active`, `deprecated`, or `audited`. **Never run a deprecated script.
 Never modify an audited script** (audited = output appeared in a submitted /
 published manuscript and is frozen).
 
+**Project-local configuration — `data_config_local.py`:** folder names, the
+sample list, exclude patterns and the geometry filter live in a
+`data_config_local.py` in the **project root**, next to `inks_local.m`. The
+shared scripts read it through `data_config.load()`. Copy
+`01_Python/data_config_local.template.py` to start. **Do not edit folder
+names back into a shared script** — that is a fork, and a fork that differs
+only in a folder name is the hardest kind to notice. With no local config
+every script resolves to exactly the literals it used before this mechanism
+existed, so doing nothing is safe.
+
+**Geometry filtering is not optional bookkeeping.** `data_config.filter_files`
+drops files naming a different measuring system and **raises** on a file
+naming none. Silently mixing a PP50 parallel-plate run into a CP50 analysis
+produces an answer that looks self-consistent and is physically wrong. Set
+`GEOMETRY_FILTER` in every project whose filenames carry the geometry.
+
+**Reuse the legacy `.xls` reader — do not re-derive the sheet layout.**
+`extract_SAOS_values.read_antpar_xls()` already knows that sheet 0 is
+"Details", the data lives on "Ramp - 1", headers are on row 1, units on row 2
+and data starts at row 3. Import it for any new one-off audit or verification
+script. Re-implementing equivalent logic from scratch has happened at least
+once and is pure waste.
+
+**Diagnose the curve before fitting it.** `flow_diagnostics.py` flags the two
+artefacts that no fit statistic reveals: a **startup transient** (viscosity
+rising at low shear — moved fitted `eta0` by 19–31 % on the CMC series) and
+**edge fracture** (stress falling while shear rate rises — the reason one
+ink's Power-Law fit sits at R² = 0.505). `Fit_Muitos_Modelos_v5.py` runs both
+automatically and, when a transient is found, reports the full-range and
+transient-excluded fits **side by side**. Neither function trims data;
+silently trimming points is how a fit becomes irreproducible.
+
+**Normal stress / N₁.** `antpar_io.read_flow_curve_with_force()` is the single
+entry point for force-augmented exports. It handles the trap that the file is
+**latin-1, not the UTF-16 the rest of this module assumes** (assuming UTF-16
+does not raise — it silently mojibakes), applies `N1 = 2F/(πR²)`, and tares
+with `baseline_correct(..., method="min")`. The rejected
+`method="median_low25"` convention **raises with an explanation** so it is not
+retried: it gave ~460 Pa where the min convention gives ~802 Pa on the same
+run. Filename pairing between audited `.xls` and force `.txt` is trap-laden
+and non-systematic — always go through `pair_audited_files()`, never glob.
+
+**Instrument identity travels with the number.** `antpar_io` now extracts the
+instrument name from the export header into `FlowCurve.instrument` (and the
+two sweep containers). Downstream scripts must echo it into their report
+headers. An ARES-G2 dataset sat mislabelled as an MCR in a project CLAUDE.md
+for months precisely because nothing ever read that field.
+
+**Cross-version checks.** `validate_fits.py` is the Python counterpart of
+`validate_v4.m`: it runs the audited `.xls` fitter and the active CSV fitter
+on the same samples and splits any disagreement into a **fitter-attributable**
+and an **ingestion-attributable** part. Reporting only "v4 says X, v5 says Y"
+leaves you unable to say which changed, and that is the question an editor
+asks.
+
+**Before submitting anything that quotes a flow rate**, run
+`check_flow_rate_consistency.py`. It compares the solver `Q`, the `Q` read
+back out of the G-code that was actually sent to the printer, and the `Q`
+implied by the measured deposit (`w·h·v_print`). Three disagreeing values for
+one print went unreconciled through a whole manuscript cycle.
+
 ---
 
 ## 4. MATLAB layer — critical rules
@@ -120,8 +181,51 @@ Use `bioprinting_algorithm_conical.m` only for conical tips. The deprecated
 solvers under `archive/scripts/` exist only for the `validate_v4.m` regression
 check — never call them for new work.
 
-**Slicer convention:** `k_flow` is **deposition efficiency**, not a slicer
-input. The slicer's **Extrusion Multiplier = 1 / k_flow**.
+**Slicer convention (state it exactly this way — a manuscript got it wrong
+for three drafts):** three quantities come out of the slicer layer and they
+are NOT interchangeable.
+
+```
+w_line  = 2*Rn*(1 + beta)                          deposited road width (m)
+v_print = Q / (w_line * h_layer)                   head speed (m/s)
+k_flow  = (1 + beta)^2 * f_slip * sqrt(Rrec/100)   deposition efficiency (-)
+```
+
+- `v_print` is **pure mass conservation of the road cross-section. It carries
+  no efficiency term.** Writing `v_print = Q*k_flow/(w*h)` double-counts the
+  swell. That exact error survived three manuscript drafts undetected; the
+  code was never wrong, the missing documentation was.
+- `k_flow` is a **separate slicer input**, applied as
+  **Extrusion Multiplier = 1 / k_flow**.
+
+Copying this block into a Methods section cannot get `k_flow`'s placement
+wrong. Re-deriving it from memory can.
+
+**Two closures in the solver are in-house heuristics, not literature.** Both
+are flagged inline in `bioprinting_algorithm_v4.m` and both are replaced in
+`bioprinting_algorithm_v5.m`. If you report a number that depends on either,
+disclose it:
+
+| quantity | v4 (heuristic) | v5 (anchored) | what it affects |
+|---|---|---|---|
+| die swell `beta` | `0.30*(1-n)` — no source; makes swell GROW as the ink gets more shear-thinning, which is backwards, and over-predicts the one measured case by ~2.5x | Tanner (1970) closure from measured `N1`; `N1 -> 0` gives the 0.13 inelastic floor (Nickell 1974) | `w_line`, `v_print`, `k_flow` → **the Extrusion Multiplier used at the bench**. Moving `beta` 0.228 → 0.107 on C15-SF5.5 moves EM 1.102 → 1.356 (+23 %). Touches no pressure or shear output. |
+| critical Reynolds | `2100*n^0.75` — no source; collapses monotonically to 222 by n = 0.05 | Ryan & Johnson (1959), non-monotonic, stays in 992–2397 | the laminar verdict string only. `Re_gen ~ 1e-4` here, so the verdict is "laminar" either way. Heuristic under-predicts 3.13x at n = 0.24, 4.31x at n = 0.088. |
+
+`bioprinting_algorithm_v5.m` does **not** fork the physics — it resolves the
+two closures and delegates to v4 through optional override parameters.
+`validate_v5.m` asserts that v5 with no `N1` reproduces v4 bit-for-bit.
+
+**Never fork a shared parameter into a project-local script.** `inks_local.m`
+in the project root is the single source of truth for `rho`, `K_PL`, `n_PL`,
+`eta0`, `etaInf`, `lambda`, `m_Cross` and `Rrec_pct`. A project-local
+extrusion or plotting script must call `inks_local()` and read the fields it
+needs — it must **never** define its own `rho` or inline `sample` struct.
+A local copy does not stay in sync; it silently forks, and the fork is
+discovered by a number that no longer matches.
+
+The same rule applies to the solver itself. If a project keeps a private copy
+of `bioprinting_algorithm_v4.m` beside its own analysis, that copy will drift.
+Use the `Export/` symlink.
 
 ---
 

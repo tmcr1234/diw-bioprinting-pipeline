@@ -19,6 +19,9 @@ slprj/
 .DS_Store
 Thumbs.db
 
+# Local pre-edit safety copies (kept on disk, never committed)
+*.bak-*
+
 # Editors
 .vscode/
 .idea/

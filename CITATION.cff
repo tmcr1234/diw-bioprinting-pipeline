@@ -18,8 +18,8 @@ abstract: >-
   validating prints from images via the Ouyang printability index.
 
 type: software
-version: "0.1.0"
-date-released: 2026-05-21
+version: "0.2.0"
+date-released: 2026-08-26
 
 repository-code: "https://github.com/tmcr1234/diw-bioprinting-pipeline"
 url: "https://github.com/tmcr1234/diw-bioprinting-pipeline"
